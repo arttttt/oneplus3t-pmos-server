@@ -13,6 +13,13 @@ AK=$(find "$HOME"/pmos-work/cache_git/pmaports -name APKBUILD \
 
 sed -i "s/^pkgver=.*/pkgver=$VER/" "$AK"
 
+# Kernel 6.12 generates the DRM/MSM register headers at build time with a
+# python3 script (drivers/gpu/drm/msm/registers/gen_header.py). The stock aport
+# makedepends has no python3, so the build dies with "python3: not found"
+# (Error 127) at GENHDR a2xx.xml.h. Add it (stdlib-only script -> python3 alone).
+grep -q 'python3' "$AK" || \
+  sed -i 's/^\(makedepends="[^"]*\)"/\1 python3"/' "$AK"
+
 # Ensure prepare() migrates the config for the new kernel (idempotent).
 if ! grep -q 'olddefconfig' "$AK"; then
   awk '1; /\.config$/ && !d {print "\tmake ARCH=\"$_carch\" olddefconfig"; d=1}' \
