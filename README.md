@@ -1,7 +1,7 @@
 # OnePlus 3T → postmarketOS headless server
 
 Turning a OnePlus 3T (`oneplus-oneplus3t`, msm8996 / Snapdragon 821, 6 GB RAM)
-into a 24/7 headless Linux server (self-hosted Telegram DCA bot).
+into a 24/7 headless Linux server.
 
 > Images and binaries are **not** committed (see `.gitignore`) — they are large,
 > device-specific, and rebuildable. This repo holds the **scripts, configs and

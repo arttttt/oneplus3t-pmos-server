@@ -86,32 +86,35 @@ OP3T_WIFI=100.x.y.z bin/op3t.sh
 
 ---
 
-## 5. Deploy the bot (CMI DCA Bot — Node/grammY)
+## 5. Deploy your service (generic example)
+
+It's a normal headless Linux server — run whatever you like under systemd.
+Example uses a Node app; swap for your runtime/app.
 
 ```
-doas apk add nodejs npm git
-git clone <YOUR_BOT_REPO_URL> ~/bot
-cd ~/bot
+doas apk add nodejs npm git   # or python3, etc.
+git clone <YOUR_REPO_URL> ~/app
+cd ~/app
 npm ci                      # or: npm install
 
-# secrets — never commit these:
-nano ~/bot/.env             # BOT_TOKEN=..., SOLANA_PRIVATE_KEY=..., etc.
-chmod 600 ~/bot/.env
+# secrets / config — never commit these:
+nano ~/app/.env
+chmod 600 ~/app/.env
 ```
 
 Run it under systemd so it survives reboots and restarts on crash:
 
 ```
-doas tee /etc/systemd/system/cmi-dca-bot.service >/dev/null <<'EOF'
+doas tee /etc/systemd/system/myapp.service >/dev/null <<'EOF'
 [Unit]
-Description=CMI DCA Bot
+Description=My service
 After=network-online.target
 Wants=network-online.target
 
 [Service]
-WorkingDirectory=/home/user/bot
-ExecStart=/usr/bin/node /home/user/bot/index.js   # adjust to your entrypoint
-EnvironmentFile=/home/user/bot/.env
+WorkingDirectory=/home/user/app
+ExecStart=/usr/bin/node /home/user/app/index.js   # adjust to your entrypoint
+EnvironmentFile=/home/user/app/.env
 Restart=always
 RestartSec=5
 User=user
@@ -121,12 +124,12 @@ WantedBy=multi-user.target
 EOF
 
 doas systemctl daemon-reload
-doas systemctl enable --now cmi-dca-bot
-journalctl -u cmi-dca-bot -f        # watch logs
+doas systemctl enable --now myapp
+journalctl -u myapp -f               # watch logs
 ```
 
-Long-polling Telegram + Solana mainnet need only outbound internet — no public
-IP or port-forwarding.
+Outbound-only services (long-poll bots, agents, schedulers) need just internet —
+no public IP or port-forwarding (pairs well with Tailscale).
 
 ---
 
@@ -168,5 +171,5 @@ doas rm /etc/doas.d/20-op3t.conf
 | Shell           | `ssh user@<ip>` (pw set in step 1)                  |
 | Battery status  | `op3t-power charge status`                           |
 | Display on/off  | `doas op3t-power display on` / `off`                 |
-| Bot logs        | `journalctl -u cmi-dca-bot -f`                       |
-| Bot restart     | `doas systemctl restart cmi-dca-bot`                |
+| Service logs    | `journalctl -u <name> -f`                           |
+| Service restart | `doas systemctl restart <name>`                     |
