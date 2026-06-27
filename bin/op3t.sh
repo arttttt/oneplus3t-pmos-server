@@ -22,7 +22,9 @@ set -uo pipefail
 
 USER_="${OP3T_USER:-user}"
 PORT="${OP3T_PORT:-22}"
-CFG="${XDG_CONFIG_HOME:-$HOME/.config}/op3t"
+# cache lives in the repo (script is bin/op3t.sh, so repo root is one dir up),
+# gitignored — it holds this device's host key + last IP, not source.
+CFG="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/.op3t"
 KEYFILE="$CFG/hostkey"      # the device's ed25519 host key: "ssh-ed25519 AAAA..."
 LASTFILE="$CFG/last_host"   # last-good host/IP, tried first on the next run
 mkdir -p "$CFG"

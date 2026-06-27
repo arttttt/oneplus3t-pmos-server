@@ -17,6 +17,9 @@ firmware/
 *.key
 *.pem
 
+# op3t.sh local state (device host key + last-good IP — device-specific, not source)
+.op3t/
+
 # OS cruft
 .DS_Store
 **/.DS_Store
