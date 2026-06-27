@@ -1,0 +1,10 @@
+# Smart battery hold (proportional controller). Parks SoC at TARGET% with ~zero
+# net current and minimal cycling. To charge fully: set TARGET=100. To disable
+# management entirely: systemctl disable --now op3t-battery-guard.
+TARGET=50           # SoC % to hold
+KP_UA=40000         # desired battery current = KP_UA*(TARGET-SoC), uA per %
+SP_MAX=900000       # cap on desired charge/discharge current (uA)
+TOL_UA=50000        # "on target" current deadband (uA)
+STEP_UA=80000       # input-current-limit step per tick (uA)
+ICL_MAX=1500000     # max USB input current (uA); 2000000 with a 2A PSU
+INTERVAL=20         # seconds per tick

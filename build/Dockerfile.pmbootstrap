@@ -1,0 +1,21 @@
+# pmbootstrap build environment for the OnePlus 3T (oneplus-oneplus3t) pmOS image.
+# Apple Silicon host -> Docker Desktop arm64 Linux VM -> native aarch64 builds.
+# Run PRIVILEGED (loop devices + chroot). pmbootstrap refuses to run as root,
+# so we exec as the unprivileged "build" user (passwordless sudo for its
+# internal privileged steps).
+FROM alpine:edge
+
+RUN apk add --no-cache \
+        pmbootstrap \
+        git \
+        sudo \
+        util-linux \
+        e2fsprogs e2fsprogs-extra \
+        openssl \
+    && adduser -D build \
+    && addgroup build wheel \
+    && echo 'build ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/build \
+    && chmod 0440 /etc/sudoers.d/build
+
+# Container runs as root; we drive pmbootstrap via `docker exec -u build`.
+CMD ["sleep", "infinity"]

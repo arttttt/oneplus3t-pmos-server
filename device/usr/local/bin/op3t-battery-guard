@@ -1,0 +1,36 @@
+#!/bin/sh
+# Smart battery hold: a proportional controller that parks SoC at TARGET% with
+# ~zero net battery current (minimal cycling) instead of bang-bang charging.
+#
+# Each tick it picks a desired battery current  sp = KP*(TARGET-SoC)  (clamped),
+# then nudges the USB input-current-limit so the measured battery current_now
+# approaches sp. At SoC==TARGET, sp=0 -> input matches consumption -> battery
+# floats at ~0 current and the level holds. Below target it tops up gently;
+# above target it stops input and bleeds down. No HW charge threshold exists on
+# this PMIC, and input_current_limit readback is unreliable, so ICL is tracked
+# internally and the loop is closed on current_now.
+[ -r /etc/default/op3t-battery-guard ] && . /etc/default/op3t-battery-guard
+: "${TARGET:=50}"       # SoC % to hold
+: "${KP_UA:=40000}"     # gain: desired battery current = KP_UA*(TARGET-SoC), uA per %
+: "${SP_MAX:=900000}"   # cap on desired charge/discharge current, uA
+: "${TOL_UA:=50000}"    # current deadband considered "on target", uA
+: "${STEP_UA:=80000}"   # ICL adjustment per tick, uA
+: "${ICL_MAX:=1500000}" # max USB input current limit, uA (2000000 with a 2A PSU)
+: "${INTERVAL:=20}"     # seconds per tick
+ICL=/sys/class/power_supply/qcom-smbchg-usb/input_current_limit
+CAP=/sys/class/power_supply/bq27541-0/capacity
+CUR=/sys/class/power_supply/bq27541-0/current_now
+clamp(){ v=$1; [ "$v" -lt "$2" ] && v=$2; [ "$v" -gt "$3" ] && v=$3; echo "$v"; }
+icl=300000
+while :; do
+  soc=$(cat "$CAP" 2>/dev/null); [ -n "$soc" ] || soc=$TARGET
+  cur=$(cat "$CUR" 2>/dev/null); [ -n "$cur" ] || cur=0          # uA: + charge / - discharge
+  sp=$(clamp $(( (TARGET - soc) * KP_UA )) $(( -SP_MAX )) "$SP_MAX")
+  diff=$(( cur - sp ))
+  if   [ "$diff" -lt $(( -TOL_UA )) ]; then icl=$(( icl + STEP_UA ))
+  elif [ "$diff" -gt "$TOL_UA" ];      then icl=$(( icl - STEP_UA ))
+  fi
+  icl=$(clamp "$icl" 0 "$ICL_MAX")
+  echo "$icl" > "$ICL" 2>/dev/null
+  sleep "$INTERVAL"
+done
