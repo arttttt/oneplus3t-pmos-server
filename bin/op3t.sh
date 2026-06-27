@@ -134,12 +134,27 @@ while :; do
   case "$c" in
     1) R 'echo "uptime:$(uptime)"; echo; free -m | head -2; echo; op3t-power charge status'; pause ;;
     2) printf "  target SoC %% [50]: "; read -r t; set_target "${t:-50}"; pause ;;
-    3) echo "  available networks:"; R 'nmcli -f SSID,SIGNAL,SECURITY dev wifi list 2>/dev/null | head -20'
-       printf "  SSID: "; read -r ssid
-       if [ -n "$ssid" ]; then
-         printf "  password: "; read -rs pass; echo
+    3) echo "  scanning networks…"
+       mapfile -t _raw < <(R "nmcli -t -f SIGNAL,SSID dev wifi list 2>/dev/null")
+       unset _seen 2>/dev/null; declare -A _seen; _rows=()
+       # strongest first, drop blank/duplicate SSIDs; line is "SIGNAL:SSID"
+       while IFS= read -r line; do
+         [ -n "$line" ] || continue
+         sig="${line%%:*}"; ssid="${line#*:}"; ssid="${ssid//\\:/:}"
+         [ -n "$ssid" ] && [ -z "${_seen[$ssid]:-}" ] || continue
+         _seen[$ssid]=1; _rows+=("$sig"$'\t'"$ssid")
+       done < <(printf '%s\n' "${_raw[@]}" | sort -t: -k1,1 -rn)
+       if [ "${#_rows[@]}" -eq 0 ]; then
+         echo "  no networks (wlan0 up? the QCA6174 PCIe link is flaky — a reboot often brings it up)"; pause; continue
+       fi
+       i=1; for r in "${_rows[@]}"; do printf "  %2d) %-26s %s%%\n" "$i" "${r#*$'\t'}" "${r%%$'\t'*}"; i=$((i+1)); done
+       printf "  pick number (Enter to cancel): "; read -r n
+       if [ -n "$n" ] && [ "$n" -ge 1 ] 2>/dev/null && [ "$n" -le "${#_rows[@]}" ]; then
+         ssid="${_rows[$((n-1))]#*$'\t'}"
+         printf "  password for %s: " "$ssid"; read -rs pass; echo
          RT "doas nmcli dev wifi connect \"$ssid\" password \"$pass\"; nmcli -g IP4.ADDRESS dev show wlan0"
-       fi; pause ;;
+       else echo "  cancelled"; fi
+       pause ;;
     4) RT ;;
     5) printf "  reboot device? [y/N] "; read -r y; [ "$y" = y ] && priv "reboot" ;;
     6) printf "  power OFF device? [y/N] "; read -r y; [ "$y" = y ] && priv "poweroff" ;;
