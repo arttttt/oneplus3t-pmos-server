@@ -1,5 +1,0 @@
-# Enable the battery-guard by default. systemctl preset-all runs at image
-# finalization with a "disable *" catch-all (99-default.preset); this file
-# (prefix < 99) is matched first, so the service gets its multi-user.target.wants
-# symlink created instead of removed.
-enable op3t-battery-guard.service

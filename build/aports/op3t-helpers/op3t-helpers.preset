@@ -1,0 +1,6 @@
+# Services op3t-helpers enables by default. `systemctl preset-all` runs at image
+# finalization with a "disable *" catch-all (99-default.preset); this file
+# (prefix 90 < 99) is matched first, so these get their multi-user.target.wants
+# symlinks created instead of removed.
+enable op3t-battery-guard.service
+enable systemd-timesyncd.service

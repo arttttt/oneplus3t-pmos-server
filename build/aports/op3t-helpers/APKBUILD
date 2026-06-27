@@ -3,17 +3,18 @@
 # Added to the image by build/install.sh via `pmbootstrap install --add op3t-helpers`.
 pkgname=op3t-helpers
 pkgver=1.0.0
-pkgrel=2
-pkgdesc="OnePlus 3T power/display CLI + smart battery-hold service"
+pkgrel=3
+pkgdesc="OnePlus 3T power/display CLI + smart battery-hold service + headless defaults"
 url="https://github.com/"
 arch="noarch"
 license="MIT"
 options="!check"
+depends="tzdata"          # for the UTC zoneinfo shipped below
 source="op3t-power
 	op3t-battery-guard
 	op3t-battery-guard.service
 	op3t-battery-guard.default
-	op3t-battery-guard.preset
+	op3t-helpers.preset
 	"
 
 package() {
@@ -25,11 +26,18 @@ package() {
 	install -Dm644 "$srcdir/op3t-battery-guard.default" \
 		"$pkgdir/etc/default/op3t-battery-guard"
 
-	# Enable on boot via a systemd preset. pmbootstrap runs `systemctl preset-all`
-	# at image finalization; the default 99-default.preset is "disable *", so a
-	# manually-shipped wants-symlink gets wiped. A preset with prefix < 99 is
-	# matched first and makes preset-all create the enable symlink. (A
-	# .post-install script can't help: image assembly doesn't run apk scripts.)
-	install -Dm644 "$srcdir/op3t-battery-guard.preset" \
+	# Enable services on boot via a systemd preset. pmbootstrap runs
+	# `systemctl preset-all` at image finalization; the default 99-default.preset
+	# is "disable *", so a manually-shipped wants-symlink gets wiped. A preset with
+	# prefix < 99 is matched first and makes preset-all create the enable symlink.
+	# (A .post-install script can't help: image assembly doesn't run apk scripts.)
+	# Enables op3t-battery-guard + systemd-timesyncd (NTP: the clock is wrong on a
+	# fresh boot — no persistent RTC on mainline msm8996 — until it syncs online).
+	install -Dm644 "$srcdir/op3t-helpers.preset" \
 		"$pkgdir/usr/lib/systemd/system-preset/90-op3t-helpers.preset"
+
+	# Headless server defaults to UTC (no DST; one timescale in logs). musl
+	# defaults to UTC already, but make it explicit so timedatectl reports it.
+	ln -sf /usr/share/zoneinfo/UTC "$pkgdir/etc/localtime"
+	mkdir -p "$pkgdir/etc"; echo UTC > "$pkgdir/etc/timezone"
 }
