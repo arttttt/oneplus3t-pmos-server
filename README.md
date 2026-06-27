@@ -39,6 +39,6 @@ bin/op3t.sh                   # manage the running device
 - Display, USB-net, charging, battery management: working.
 - **WiFi + Bluetooth (QCA6174a): WORKING.** Required two things: kernel **6.12.10**
   (6.3.1 has the bug, 6.19.5 doesn't boot) **and** kernel cmdline
-  **`pcie_aspm=off pci=nomsi`** (FIX 4) — mainline's PCIe ASPM/L1ss handling
+  **`pcie_aspm=off pci=nomsi`** — mainline's PCIe ASPM/L1ss handling
   otherwise blocks the QCA6174 link training (`Phy link never came up`).
   Both are baked into `build/install.sh`.

@@ -7,7 +7,7 @@
 #
 # Run:   bin/op3t.sh
 # Env:   OP3T_USER (default user), OP3T_USB (default 172.16.42.1),
-#        OP3T_WIFI (default op3t-bot.local — set to the phone's LAN IP/name
+#        OP3T_WIFI (default op3t.local — set to the phone's LAN IP/name
 #        once WiFi is configured), OP3T_PORT (default 22).
 set -uo pipefail
 

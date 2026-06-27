@@ -3,15 +3,14 @@
 # OnePlus 3T (oneplus-oneplus3t, msm8996) -> postmarketOS headless server
 # End-to-end build + flash pipeline. Verified working 2026-06-27.
 #
-# Encodes the THREE fixes that make it boot on this device:
-#   1) KERNEL: use 6.3.1 via channel v25.12  (6.19.5 in v26.06/edge hangs op3t
-#      pre-initramfs — kernel regression).
-#   2) SECTORS: build the rootfs image with 4096-byte sectors
-#      (--sector-size 4096). userdata is 4Kn UFS; a 512-sector GPT is unreadable
-#      by the initramfs kpartx -> "failed to mount subpartitions".
-#   3) FLASH: stock `fastboot flash userdata` is a NO-OP on this device. Flash
-#      the rootfs from TWRP via adb + simg2img onto the userdata block device,
-#      and the boot image (lk2nd + pmOS boot @512K) via dd.
+# Encodes the device-specific quirks that make it boot and get WiFi:
+#   - KERNEL: 6.12.10 (6.3.1 boots but has no WiFi; 6.19.5 hangs pre-initramfs).
+#   - SECTORS: build the image with 4096-byte sectors (--sector-size 4096) —
+#     userdata is 4Kn UFS; a 512-sector GPT is unreadable by the initramfs kpartx.
+#   - FLASH: stock `fastboot flash userdata` is a NO-OP here; flash the rootfs
+#     from TWRP via adb + simg2img onto userdata, and boot (lk2nd + pmOS) via dd.
+#   - WiFi: the QCA6174 PCIe link won't train under mainline ASPM/L1ss — add
+#     pcie_aspm=off pci=nomsi to the kernel cmdline.
 #
 # Host: macOS (Apple Silicon) + Docker Desktop. pmbootstrap runs in a
 # privileged Linux container (it cannot run natively on macOS).
@@ -35,7 +34,7 @@ CONTAINER="pmos"              # docker container name
 VOLUME="pmbootstrap-work"     # persistent pmbootstrap work dir (native ext4)
 WORK="/home/build/pmos-work"  # work dir inside container (the volume)
 
-CHANNEL="v25.12"              # FIX 1: kernel 6.3.1 (NOT v26.06/edge=6.19.5)
+CHANNEL="v25.12"              # base channel; bump_kernel then sets KERNELVER
 VENDOR="oneplus"
 CODENAME="oneplus3t"
 DEVICE="oneplus-oneplus3t"
@@ -43,9 +42,9 @@ KERNEL="s6e3fa5"             # display panel variant (this unit; verify via lk2n
 UI="console"                 # 'console' for bring-up; 'none' for production
 HOSTNAME="op3t"
 PASSWORD="changeme"          # CHANGE after first boot via `passwd`
-SECTOR=4096                  # FIX 2: 4Kn UFS
+SECTOR=4096                  # userdata is 4Kn UFS
 KERNELVER="6.12.10"          # msm8996-mainline fork tag: 6.3.1=no WiFi, 6.19.5=hangs, 6.12.10=boots+WiFi
-CMDLINE_EXTRA="pcie_aspm=off pci=nomsi"  # FIX 4: ASPM/L1ss blocks QCA6174 PCIe link -> kills WiFi/BT
+CMDLINE_EXTRA="pcie_aspm=off pci=nomsi"  # ASPM/L1ss blocks QCA6174 PCIe link -> WiFi/BT
 
 CHROOT_ROOTFS="$WORK/chroot_rootfs_${DEVICE}"
 CHROOT_NATIVE="$WORK/chroot_native"
@@ -112,7 +111,7 @@ build_image(){
   bump_kernel
   add_helpers_aport
 
-  log "pmbootstrap install (--no-split --sector-size $SECTOR + op3t-helpers)   # FIX 2"
+  log "pmbootstrap install (--no-split --sector-size $SECTOR + op3t-helpers)"
   dx "pmbootstrap -y install --no-split --sector-size $SECTOR --password '$PASSWORD' --add op3t-helpers 2>&1 | tail -6"
   dx "pmbootstrap shutdown 2>&1 | tail -1 || true"
 
@@ -123,7 +122,7 @@ build_image(){
   ls -lh "$PMOS_DIR/boot.img" "$PMOS_DIR/rootfs.img"
 }
 
-# ---- FIX 4: bake the PCIe cmdline workaround into boot.img -------------------
+# ---- bake the PCIe cmdline workaround into boot.img -------------------------
 # pmbootstrap ignores deviceinfo_kernel_cmdline here, so patch the Android boot
 # header cmdline field (offset 64, 512 B) directly. UUID/kernel untouched.
 patch_cmdline(){
@@ -158,7 +157,7 @@ combine(){
   ls -lh "$PMOS_DIR/combined.img"
 }
 
-# ---- flash from TWRP (FIX 3: stock fastboot userdata is a no-op) -------------
+# ---- flash from TWRP (stock fastboot userdata is a no-op here) ---------------
 # Device must be booted into TWRP recovery with `adb devices` showing 'recovery'.
 flash(){
   [ -f "$PMOS_DIR/rootfs.img" ] && [ -f "$PMOS_DIR/combined.img" ] || {
