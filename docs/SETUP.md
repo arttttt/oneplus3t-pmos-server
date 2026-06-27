@@ -66,23 +66,35 @@ doas apk upgrade        # optional
 
 ---
 
-## 4. Tailscale (remote access without a public IP)
+## 4. Public HTTPS URL for a web service — Tailscale Funnel (no domain / no static IP)
+
+If a service needs a public URL openable from any device (e.g. links it sends to
+users), use Tailscale **Funnel**. It runs **only on this server**, needs no domain
+or static IP, and gives a stable URL `https://op3t.<tailnet>.ts.net` — recipients
+install nothing. Outbound tunnel, so no port-forwarding.
 
 ```
 doas apk add tailscale
 doas systemctl enable --now tailscaled
-doas tailscale up                # opens a login URL — authenticate in a browser
-tailscale ip -4                  # your 100.x.y.z address
+doas tailscale up                # one-time browser login
 ```
 
-Then reach the box from anywhere:
+In the Tailscale admin console (login.tailscale.com): enable **MagicDNS** +
+**HTTPS certificates**, and allow **Funnel** for this node. Then expose your
+service's local port (example: app on localhost:8080):
 
 ```
-OP3T_WIFI=100.x.y.z bin/op3t.sh
-# or: ssh user@100.x.y.z
+doas tailscale funnel --bg 8080  # serve localhost:8080 publicly on :443
+tailscale funnel status          # prints the public https://…ts.net URL
 ```
 
-(Optional, set-and-forget: `doas tailscale up --ssh` to use Tailscale SSH.)
+Point the service's base URL at that `…ts.net`. Funnel only listens on 443/8443/
+10000 (HTTPS). Nothing is installed on your phone or laptop.
+
+> Admin access: you manage from the home LAN, so no remote tooling is needed —
+> `ssh user@op3t.local` (install mDNS: `doas apk add avahi && doas systemctl
+> enable --now avahi-daemon`) or the LAN IP (reserve it in your router). Tailscale
+> is only for the public service URL above, not for admin.
 
 ---
 
