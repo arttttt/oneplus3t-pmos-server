@@ -91,6 +91,30 @@ tailscale funnel status          # prints the public https://…ts.net URL
 Point the service's base URL at that `…ts.net`. Funnel only listens on 443/8443/
 10000 (HTTPS). Nothing is installed on your phone or laptop.
 
+### Expose only while links are live (extra hardening)
+
+Don't keep Funnel up 24/7. Bring it up only while a fresh, short-TTL link is
+outstanding, then tear it down. The web endpoint binds to **localhost only**, so
+Funnel is the *sole* external path — toggling Funnel = toggling external reach.
+
+Let the service (running as `user`) control Tailscale without root, one-time:
+
+```
+doas tailscale set --operator=user
+```
+
+Then, inside the service, around each link's lifetime (refcount overlapping links):
+
+```
+tailscale funnel --bg <port>   # ON  — when issuing a link (idempotent)
+tailscale funnel reset         # OFF — when the last active link expires
+                               #       (verify the off/reset form: tailscale funnel --help)
+```
+
+When off, `https://op3t.<tailnet>.ts.net` serves nothing → no standing public
+surface. Funnel toggles are near-instant; the HTTPS cert is provisioned once and
+cached.
+
 > Admin access: you manage from the home LAN, so no remote tooling is needed —
 > `ssh user@op3t.local` (install mDNS: `doas apk add avahi && doas systemctl
 > enable --now avahi-daemon`) or the LAN IP (reserve it in your router). Tailscale
