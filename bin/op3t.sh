@@ -51,24 +51,31 @@ while :; do
   echo "=================================================="
   echo "  1) Status        (uptime / load / mem / battery)"
   echo "  2) Battery       set hold target % (100 = full)"
-  echo "  3) Display ON"
-  echo "  4) Display OFF"
-  echo "  5) Open terminal (shell on the device)"
-  echo "  6) Reboot device"
-  echo "  7) Power off device"
-  echo "  8) Quit"
+  echo "  3) WiFi          connect to a network"
+  echo "  4) Display ON"
+  echo "  5) Display OFF"
+  echo "  6) Open terminal (shell on the device)"
+  echo "  7) Reboot device"
+  echo "  8) Power off device"
+  echo "  0) Quit"
   echo "=================================================="
   printf "  choose: "
   read -r c || break
   case "$c" in
     1) R 'echo "uptime:$(uptime)"; echo; free -m | head -2; echo; op3t-power charge status'; pause ;;
     2) printf "  target SoC %% [50]: "; read -r t; set_target "${t:-50}"; pause ;;
-    3) priv "/usr/local/bin/op3t-power display on";  pause ;;
-    4) priv "/usr/local/bin/op3t-power display off"; pause ;;
-    5) RT ;;
-    6) printf "  reboot device? [y/N] "; read -r y; [ "$y" = y ] && priv "reboot" ;;
-    7) printf "  power OFF device? [y/N] "; read -r y; [ "$y" = y ] && priv "poweroff" ;;
-    8) break ;;
+    3) echo "  available networks:"; R 'nmcli -f SSID,SIGNAL,SECURITY dev wifi list 2>/dev/null | head -20'
+       printf "  SSID: "; read -r ssid
+       if [ -n "$ssid" ]; then
+         printf "  password: "; read -rs pass; echo
+         RT "doas nmcli dev wifi connect \"$ssid\" password \"$pass\"; nmcli -g IP4.ADDRESS dev show wlan0"
+       fi; pause ;;
+    4) priv "/usr/local/bin/op3t-power display on";  pause ;;
+    5) priv "/usr/local/bin/op3t-power display off"; pause ;;
+    6) RT ;;
+    7) printf "  reboot device? [y/N] "; read -r y; [ "$y" = y ] && priv "reboot" ;;
+    8) printf "  power OFF device? [y/N] "; read -r y; [ "$y" = y ] && priv "poweroff" ;;
+    0) break ;;
     *) ;;
   esac
 done
