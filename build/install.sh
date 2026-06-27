@@ -261,6 +261,30 @@ UDEOF
     echo -n "  (sparse) userdata GPT @4096: "; adb shell 'dd if=/dev/block/bootdevice/by-name/userdata bs=1 skip=4096 count=8 2>/dev/null | od -An -c'
   fi
 
+  # The raw image's GPT is sized to its CONTENT, so written onto the much larger
+  # userdata partition its backup GPT header lands mid-device, not at the end —
+  # the kernel then rejects the nested GPT and the initramfs can't map the
+  # pmos_boot/pmos_root subpartitions (it drops to the debug shell). Relocate the
+  # backup GPT to the device end, then confirm both subpartitions map. (Done
+  # AFTER the read-back sha check, since it rewrites GPT metadata.)
+  log "relocate backup GPT to device end + verify subpartitions map"
+  adb shell '
+    D=/dev/block/bootdevice/by-name/userdata
+    if command -v sgdisk >/dev/null 2>&1; then sgdisk -e "$D" >/dev/null 2>&1 && echo "  sgdisk -e: ok"
+    elif command -v parted >/dev/null 2>&1; then printf "Fix\nFix\n" | parted ---pretend-input-tty "$D" print >/dev/null 2>&1 && echo "  parted Fix: ok"
+    else echo "  NO-GPT-TOOL (need sgdisk or parted in TWRP)"; fi
+    partprobe "$D" 2>/dev/null
+    kpartx -as "$D" 2>/dev/null'
+  local nparts
+  nparts=$(adb shell 'kpartx -l /dev/block/bootdevice/by-name/userdata 2>/dev/null | wc -l' 2>/dev/null | tr -d '\r\n ')
+  echo "  subpartitions in nested GPT: ${nparts:-0}"
+  if ! [ "${nparts:-0}" -ge 2 ] 2>/dev/null; then
+    echo "VERIFY FAILED: nested GPT not readable after relocate (got '${nparts:-0}')." >&2
+    echo "TWRP may lack sgdisk/parted, or the relocate failed — flashing would boot to the debug shell." >&2
+    exit 1
+  fi
+  echo "  ✓ pmos_boot + pmos_root readable"
+
   log "flash combined -> boot (verify upload sha + boot magics)"
   adb_recover; adb push "$C" /tmp/b.img >/dev/null 2>&1
   local bdh; bdh=$(adb shell 'sha256sum /tmp/b.img 2>/dev/null' 2>/dev/null | awk '{print $1}' | tr -d '\r')
@@ -270,7 +294,8 @@ UDEOF
   echo -n "  boot @524288: "; adb shell 'dd if=/dev/block/bootdevice/by-name/boot bs=1 skip=524288 count=8 2>/dev/null | od -An -c'
 
   log "cleanup staged files + reboot"
-  adb shell 'rm -f /tmp/r.img /tmp/b.img /tmp/flash_ud.sh /tmp/ud.done /tmp/ud.err /tmp/ud.fmt /tmp/ud.hash; sync'
+  adb shell 'kpartx -d /dev/block/bootdevice/by-name/userdata 2>/dev/null
+             rm -f /tmp/r.img /tmp/b.img /tmp/flash_ud.sh /tmp/ud.done /tmp/ud.err /tmp/ud.fmt /tmp/ud.hash; sync'
   adb reboot
   echo "Flashed + verified. After ~40s the new system boots; reach it with bin/op3t.sh (password: $PASSWORD)."
 }
