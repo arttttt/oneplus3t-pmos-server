@@ -52,11 +52,9 @@ while :; do
   echo "  1) Status        (uptime / load / mem / battery)"
   echo "  2) Battery       set hold target % (100 = full)"
   echo "  3) WiFi          connect to a network"
-  echo "  4) Display ON"
-  echo "  5) Display OFF"
-  echo "  6) Open terminal (shell on the device)"
-  echo "  7) Reboot device"
-  echo "  8) Power off device"
+  echo "  4) Open terminal (shell on the device)"
+  echo "  5) Reboot device"
+  echo "  6) Power off device"
   echo "  0) Quit"
   echo "=================================================="
   printf "  choose: "
@@ -70,11 +68,9 @@ while :; do
          printf "  password: "; read -rs pass; echo
          RT "doas nmcli dev wifi connect \"$ssid\" password \"$pass\"; nmcli -g IP4.ADDRESS dev show wlan0"
        fi; pause ;;
-    4) priv "/usr/local/bin/op3t-power display on";  pause ;;
-    5) priv "/usr/local/bin/op3t-power display off"; pause ;;
-    6) RT ;;
-    7) printf "  reboot device? [y/N] "; read -r y; [ "$y" = y ] && priv "reboot" ;;
-    8) printf "  power OFF device? [y/N] "; read -r y; [ "$y" = y ] && priv "poweroff" ;;
+    4) RT ;;
+    5) printf "  reboot device? [y/N] "; read -r y; [ "$y" = y ] && priv "reboot" ;;
+    6) printf "  power OFF device? [y/N] "; read -r y; [ "$y" = y ] && priv "poweroff" ;;
     0) break ;;
     *) ;;
   esac

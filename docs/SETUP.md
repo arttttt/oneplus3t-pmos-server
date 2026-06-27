@@ -170,6 +170,5 @@ doas rm /etc/doas.d/20-op3t.conf
 | Menu            | `bin/op3t.sh`  (`OP3T_WIFI=<ip>` for WiFi/Tailscale)|
 | Shell           | `ssh user@<ip>` (pw set in step 1)                  |
 | Battery status  | `op3t-power charge status`                           |
-| Display on/off  | `doas op3t-power display on` / `off`                 |
 | Service logs    | `journalctl -u <name> -f`                           |
 | Service restart | `doas systemctl restart <name>`                     |
