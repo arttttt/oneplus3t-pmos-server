@@ -17,8 +17,9 @@ source="op3t-power
 	"
 
 package() {
-	install -Dm755 "$srcdir/op3t-power"            "$pkgdir/usr/local/bin/op3t-power"
-	install -Dm755 "$srcdir/op3t-battery-guard"    "$pkgdir/usr/local/bin/op3t-battery-guard"
+	# /usr/bin (NOT /usr/local): abuild's postcheck rejects anything under /usr/local.
+	install -Dm755 "$srcdir/op3t-power"            "$pkgdir/usr/bin/op3t-power"
+	install -Dm755 "$srcdir/op3t-battery-guard"    "$pkgdir/usr/bin/op3t-battery-guard"
 	install -Dm644 "$srcdir/op3t-battery-guard.service" \
 		"$pkgdir/usr/lib/systemd/system/op3t-battery-guard.service"
 	install -Dm644 "$srcdir/op3t-battery-guard.default" \

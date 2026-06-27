@@ -3,7 +3,7 @@ Description=OP3T battery charge-band guard
 After=multi-user.target
 
 [Service]
-ExecStart=/usr/local/bin/op3t-battery-guard
+ExecStart=/usr/bin/op3t-battery-guard
 Restart=always
 RestartSec=5
 

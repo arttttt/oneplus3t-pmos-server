@@ -5,7 +5,7 @@
 BL=/sys/class/backlight/994000.dsi.0
 ICL=/sys/class/power_supply/qcom-smbchg-usb/input_current_limit
 G=/sys/class/power_supply/bq27541-0
-root(){ [ "$(id -u)" = 0 ] && return; exec doas /usr/local/bin/op3t-power "$@"; }
+root(){ [ "$(id -u)" = 0 ] && return; exec doas /usr/bin/op3t-power "$@"; }
 case "$1 $2" in
   # NOTE: brightness only takes effect while the panel is awake. Once the kernel
   # console-blank powers the panel down (DPMS Off after CONFIG consoleblank secs),
