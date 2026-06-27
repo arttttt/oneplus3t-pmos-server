@@ -261,29 +261,77 @@ UDEOF
     echo -n "  (sparse) userdata GPT @4096: "; adb shell 'dd if=/dev/block/bootdevice/by-name/userdata bs=1 skip=4096 count=8 2>/dev/null | od -An -c'
   fi
 
-  # The raw image's GPT is sized to its CONTENT, so written onto the much larger
-  # userdata partition its backup GPT header lands mid-device, not at the end —
-  # the kernel then rejects the nested GPT and the initramfs can't map the
-  # pmos_boot/pmos_root subpartitions (it drops to the debug shell). Relocate the
-  # backup GPT to the device end, then confirm both subpartitions map. (Done
-  # AFTER the read-back sha check, since it rewrites GPT metadata.)
-  log "relocate backup GPT to device end + verify subpartitions map"
-  adb shell '
-    D=/dev/block/bootdevice/by-name/userdata
-    if command -v sgdisk >/dev/null 2>&1; then sgdisk -e "$D" >/dev/null 2>&1 && echo "  sgdisk -e: ok"
-    elif command -v parted >/dev/null 2>&1; then printf "Fix\nFix\n" | parted ---pretend-input-tty "$D" print >/dev/null 2>&1 && echo "  parted Fix: ok"
-    else echo "  NO-GPT-TOOL (need sgdisk or parted in TWRP)"; fi
-    partprobe "$D" 2>/dev/null
-    kpartx -as "$D" 2>/dev/null'
-  local nparts
-  nparts=$(adb shell 'kpartx -l /dev/block/bootdevice/by-name/userdata 2>/dev/null | wc -l' 2>/dev/null | tr -d '\r\n ')
-  echo "  subpartitions in nested GPT: ${nparts:-0}"
-  if ! [ "${nparts:-0}" -ge 2 ] 2>/dev/null; then
-    echo "VERIFY FAILED: nested GPT not readable after relocate (got '${nparts:-0}')." >&2
-    echo "TWRP may lack sgdisk/parted, or the relocate failed — flashing would boot to the debug shell." >&2
-    exit 1
-  fi
-  echo "  ✓ pmos_boot + pmos_root readable"
+  # Relocate the backup GPT to the device end. The image's GPT is sized to its
+  # CONTENT, so on the much larger userdata its backup header sits mid-device and
+  # the kernel rejects the nested GPT (initramfs drops to the debug shell). TWRP
+  # has no sgdisk/parted, so do it TOOL-FREE: the host (python) recomputes the
+  # primary + backup headers and CRC32 from the GPT read off the device, and the
+  # device writes the blobs with plain dd (it needs nothing but dd). Verified by
+  # reading the headers back and re-checking CRC32. (After the read-back sha.)
+  log "relocate backup GPT to device end (host computes, device dd-writes) + verify"
+  local dev gdir nbytes nlba seeks be_lba bh_lba p2_lba em
+  dev=/dev/block/bootdevice/by-name/userdata
+  nbytes=$(adb shell "blockdev --getsize64 $dev" 2>/dev/null | tr -d '\r\n ')
+  nlba=$(( nbytes / 4096 ))
+  gdir="$(mktemp -d -t op3t_gpt.XXXXXX)"
+  adb exec-out "dd if=$dev bs=4096 skip=1 count=5 2>/dev/null" > "$gdir/in.bin"
+  seeks=$(python3 - "$gdir" "$nlba" <<'PY'
+import struct, zlib, sys
+g, N = sys.argv[1], int(sys.argv[2]); LBA = 4096; LAST = N - 1
+d = open(g + "/in.bin", "rb").read(); h = d[:LBA]
+assert h[:8] == b"EFI PART", "no GPT on userdata after write"
+pe  = struct.unpack_from("<Q", h, 72)[0]; num = struct.unpack_from("<I", h, 80)[0]
+esz = struct.unpack_from("<I", h, 84)[0]; fu  = struct.unpack_from("<Q", h, 40)[0]
+guid = h[56:72]
+ent = d[(pe - 1) * LBA : (pe - 1) * LBA + num * esz]; ec = zlib.crc32(ent) & 0xffffffff
+el = (num * esz + LBA - 1) // LBA; bel = LAST - el; bhl = LAST; nl = bel - 1
+def mk(my, alt, pelba):
+    x = bytearray(LBA); x[0:8] = b"EFI PART"
+    struct.pack_into("<I", x, 8, 0x10000); struct.pack_into("<I", x, 12, 92)
+    struct.pack_into("<Q", x, 24, my);  struct.pack_into("<Q", x, 32, alt)
+    struct.pack_into("<Q", x, 40, fu);  struct.pack_into("<Q", x, 48, nl); x[56:72] = guid
+    struct.pack_into("<Q", x, 72, pelba)
+    struct.pack_into("<I", x, 80, num); struct.pack_into("<I", x, 84, esz)
+    struct.pack_into("<I", x, 88, ec)
+    struct.pack_into("<I", x, 16, zlib.crc32(bytes(x[0:92])) & 0xffffffff)
+    return bytes(x)
+open(g + "/p.bin",  "wb").write(mk(1, bhl, pe))
+open(g + "/be.bin", "wb").write(ent + b"\x00" * (el * LBA - len(ent)))
+open(g + "/bh.bin", "wb").write(mk(bhl, 1, bel))
+p2 = struct.unpack_from("<Q", ent, esz + 32)[0]   # pmos_root start LBA
+print(f"{bel} {bhl} {p2}")
+PY
+)
+  [ -n "$seeks" ] || { echo "GPT relocate: failed to parse on-device GPT" >&2; rm -rf "$gdir"; exit 1; }
+  set -- $seeks; be_lba="$1"; bh_lba="$2"; p2_lba="$3"
+  adb push "$gdir/p.bin"  /tmp/gp.bin  >/dev/null 2>&1
+  adb push "$gdir/be.bin" /tmp/gbe.bin >/dev/null 2>&1
+  adb push "$gdir/bh.bin" /tmp/gbh.bin >/dev/null 2>&1
+  adb shell "dd if=/tmp/gp.bin  of=$dev bs=4096 seek=1 2>/dev/null
+             dd if=/tmp/gbe.bin of=$dev bs=4096 seek=$be_lba 2>/dev/null
+             dd if=/tmp/gbh.bin of=$dev bs=4096 seek=$bh_lba 2>/dev/null; sync"
+  adb exec-out "dd if=$dev bs=4096 skip=1 count=1 2>/dev/null"       > "$gdir/rp.bin"
+  adb exec-out "dd if=$dev bs=4096 skip=$bh_lba count=1 2>/dev/null" > "$gdir/rbh.bin"
+  adb exec-out "dd if=$dev bs=4096 skip=$be_lba count=4 2>/dev/null" > "$gdir/rbe.bin"
+  if ! python3 - "$gdir" <<'PY'
+import struct, zlib, sys
+g = sys.argv[1]
+def hdr_ok(fn):
+    h = open(g + "/" + fn, "rb").read()
+    if h[:8] != b"EFI PART": return False
+    s = struct.unpack_from("<I", h, 16)[0]; t = bytearray(h[:92]); struct.pack_into("<I", t, 16, 0)
+    return s == zlib.crc32(bytes(t)) & 0xffffffff
+e = open(g + "/rbe.bin", "rb").read()[:128 * 128]; ec = zlib.crc32(e) & 0xffffffff
+p = open(g + "/rp.bin", "rb").read(); b = open(g + "/rbh.bin", "rb").read()
+sys.exit(0 if (hdr_ok("rp.bin") and hdr_ok("rbh.bin")
+               and struct.unpack_from("<I", p, 88)[0] == ec
+               and struct.unpack_from("<I", b, 88)[0] == ec) else 1)
+PY
+  then echo "GPT relocate VERIFY FAILED (CRC mismatch on read-back)" >&2; rm -rf "$gdir"; exit 1; fi
+  echo "  ✓ GPT relocated to device end + CRC-verified (backup header @ LBA $bh_lba)"
+  em=$(adb exec-out "dd if=$dev bs=4096 skip=$p2_lba count=1 2>/dev/null" | od -An -tx1 -j1080 -N2 | tr -d ' \r\n')
+  [ "$em" = "53ef" ] && echo "  ✓ pmos_root ext4 superblock present" || echo "  WARN: pmos_root ext4 magic='${em:-?}' (expected 53ef)"
+  rm -rf "$gdir"
 
   log "flash combined -> boot (verify upload sha + boot magics)"
   adb_recover; adb push "$C" /tmp/b.img >/dev/null 2>&1
@@ -294,8 +342,7 @@ UDEOF
   echo -n "  boot @524288: "; adb shell 'dd if=/dev/block/bootdevice/by-name/boot bs=1 skip=524288 count=8 2>/dev/null | od -An -c'
 
   log "cleanup staged files + reboot"
-  adb shell 'kpartx -d /dev/block/bootdevice/by-name/userdata 2>/dev/null
-             rm -f /tmp/r.img /tmp/b.img /tmp/flash_ud.sh /tmp/ud.done /tmp/ud.err /tmp/ud.fmt /tmp/ud.hash; sync'
+  adb shell 'rm -f /tmp/r.img /tmp/b.img /tmp/flash_ud.sh /tmp/ud.done /tmp/ud.err /tmp/ud.fmt /tmp/ud.hash /tmp/gp.bin /tmp/gbe.bin /tmp/gbh.bin; sync'
   adb reboot
   echo "Flashed + verified. After ~40s the new system boots; reach it with bin/op3t.sh (password: $PASSWORD)."
 }
