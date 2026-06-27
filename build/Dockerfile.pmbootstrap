@@ -11,11 +11,27 @@ RUN apk add --no-cache \
         sudo \
         util-linux \
         e2fsprogs e2fsprogs-extra \
+        parted \
         openssl \
     && adduser -D build \
     && addgroup build wheel \
     && echo 'build ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/build \
     && chmod 0440 /etc/sudoers.d/build
 
+# Entrypoint: give pmbootstrap a REAL devtmpfs at /dev. Docker mounts /dev as a
+# tmpfs, which never gets the loopNp1/loopNp2 nodes the kernel creates when
+# pmbootstrap runs `losetup -P` during image install -> install silently writes
+# the partition table but NO filesystems -> an EMPTY image that boots to the
+# initramfs "failed to mount subpartitions" debug shell. Overlaying a devtmpfs
+# (needs --privileged) makes those nodes appear, so install populates the image.
+# Self-contained: no host-side tweaking of the running container needed.
+RUN { \
+      echo '#!/bin/sh'; \
+      echo 'mount -t devtmpfs devtmpfs /dev 2>/dev/null || true'; \
+      echo 'losetup -D 2>/dev/null || true'; \
+      echo 'exec "$@"'; \
+    } > /usr/local/bin/entrypoint.sh && chmod +x /usr/local/bin/entrypoint.sh
+
 # Container runs as root; we drive pmbootstrap via `docker exec -u build`.
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["sleep", "infinity"]

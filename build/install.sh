@@ -74,8 +74,14 @@ ensure_container(){
       -v "$VOLUME:$WORK" -v "$PROJ:/project" "$IMAGE" >/dev/null
     dxr "chown -R build:build /home/build 2>/dev/null || true"
   fi
-  # FIX (container): real devtmpfs so loop-partition nodes appear (kpartx/mkfs)
-  dxr "mountpoint -q /dev || mount -t devtmpfs devtmpfs /dev 2>/dev/null || true; [ -e /dev/loop-control ] || mount -t devtmpfs devtmpfs /dev 2>/dev/null || true; echo devtmpfs-ok"
+  # The image's entrypoint mounts a devtmpfs over /dev (needed so pmbootstrap's
+  # `losetup -P` creates loopNp1 nodes during install). Verify it took — without
+  # it, install silently produces an EMPTY image.
+  if ! dxr "mount | grep -q 'devtmpfs on /dev '"; then
+    echo "ERROR: /dev is not devtmpfs in the container (entrypoint failed?)." >&2
+    echo "Rebuild the image: docker rm -f $CONTAINER; docker rmi $IMAGE; then re-run." >&2
+    exit 1
+  fi
 }
 
 # ---- kernel version bump (msm8996-mainline fork) ----------------------------
@@ -112,7 +118,9 @@ build_image(){
   add_helpers_aport
 
   log "pmbootstrap install (--no-split --sector-size $SECTOR + op3t-helpers)"
-  dx "pmbootstrap -y install --no-split --sector-size $SECTOR --password '$PASSWORD' --add op3t-helpers 2>&1 | tail -6"
+  # `set -o pipefail` inside the inner sh so a pmbootstrap failure isn't masked by
+  # the `| tail` (the outer pipefail does NOT apply inside `docker exec sh -lc`).
+  dx "set -o pipefail; pmbootstrap -y install --no-split --sector-size $SECTOR --password '$PASSWORD' --add op3t-helpers 2>&1 | tail -12"
   dx "pmbootstrap shutdown 2>&1 | tail -1 || true"
 
   log "export images -> $PMOS_DIR"
@@ -120,6 +128,19 @@ build_image(){
   dxr "cp '$BOOT_IMG_SRC' /project/pmos/boot.img && cp '$ROOTFS_SPARSE' /project/pmos/rootfs.img"
   dx "echo 'installed kernel:'; awk '/^P:linux-postmarketos-qcom-msm8996/{p=1} p&&/^V:/{print;p=0}' $CHROOT_ROOTFS/lib/apk/db/installed"
   ls -lh "$PMOS_DIR/boot.img" "$PMOS_DIR/rootfs.img"
+
+  # Sanity: the rootfs image MUST contain real filesystems. If install couldn't
+  # create the loop-partition nodes it writes only a GPT (all zeros) and pmOS
+  # boots to the initramfs "failed to mount subpartitions" debug shell. Catch
+  # that empty image here instead of flashing a brick.
+  log "verify rootfs image is populated (not an empty GPT shell)"
+  if ! LC_ALL=C grep -qa -m1 -E 'postmarketos|alpine-baselayout|/bin/busybox' "$PMOS_DIR/rootfs.img"; then
+    echo "ERROR: built rootfs.img has NO filesystem content — pmbootstrap install did not" >&2
+    echo "populate the subpartitions (loop-partition/devtmpfs issue in the container)." >&2
+    echo "Do NOT flash this image. Rebuild the container image and retry." >&2
+    exit 1
+  fi
+  echo "ok: rootfs.img contains a real filesystem"
 }
 
 # ---- bake the PCIe cmdline workaround into boot.img -------------------------
