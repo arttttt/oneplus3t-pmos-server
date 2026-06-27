@@ -11,9 +11,10 @@ into a 24/7 headless Linux server.
 
 | Path | What |
 |------|------|
-| `bin/op3t.sh` | Host-side **menu** to manage the device over USB-net / WiFi (one SSH session, multiplexed). Status, battery target, display, terminal, reboot. |
-| `build/install.sh` | End-to-end build+flash pipeline (Docker + pmbootstrap). Encodes the 3 fixes: kernel channel, `--sector-size 4096`, TWRP flashing. |
-| `build/Dockerfile.pmbootstrap` | Linux build env for pmbootstrap on macOS. |
+| `bin/op3t.sh` | Host-side **menu** to manage the device. Auto-discovers it (scans the Mac's own subnets, identifies the phone by its SSH host key, self-heals after a reinstall) over USB-net / WiFi; one multiplexed SSH session. Status, battery target, WiFi connect, terminal, reboot/poweroff. |
+| `build/install.sh` | End-to-end pipeline (Docker + pmbootstrap): `build` / `combine` / `flash` / `all`. Encodes the device quirks (kernel 6.12.10, 4Kn `--sector-size 4096`, PCIe cmdline) and a **verified flash** — sha256 of upload + read-back, detached write that survives USB drops, backup-GPT relocation, and an empty-image guard. |
+| `build/Dockerfile.pmbootstrap` | Self-contained pmbootstrap build env (Alpine). Its entrypoint mounts a **devtmpfs over `/dev`** so `losetup -P` exposes the loop partitions — without it pmbootstrap writes a partition table but no filesystems (an empty image). |
+| `build/bump-kernel.sh` | Bumps the msm8996-mainline kernel aport to 6.12.10 (adds `python3` to makedepends + `make olddefconfig`) and builds it. |
 | `device/` | On-device helpers, installed into the rootfs: `op3t-power` (display/charge CLI), `op3t-battery-guard` (smart SoC-hold service) + its systemd unit / `/etc/default` / doas rule. |
 | `docs/SETUP.md` | Manual post-install steps: password, WiFi, Tailscale, service deploy. |
 
