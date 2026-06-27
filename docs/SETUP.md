@@ -51,9 +51,9 @@ The menu auto-detects USB first, then WiFi. Point it at the WiFi IP:
 OP3T_WIFI=192.168.1.50 bin/op3t.sh
 ```
 
-(Optional: for a stable `op3t-bot.local` name instead of an IP, install mDNS:
+(Optional: for a stable `op3t.local` name instead of an IP, install mDNS:
 `doas apk add avahi && doas systemctl enable --now avahi-daemon` — then the
-default `OP3T_WIFI=op3t-bot.local` works.)
+default `OP3T_WIFI=op3t.local` works.)
 
 ---
 

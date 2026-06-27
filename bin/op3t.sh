@@ -13,7 +13,7 @@ set -uo pipefail
 
 USER_="${OP3T_USER:-user}"
 USB="${OP3T_USB:-172.16.42.1}"
-WIFI="${OP3T_WIFI:-op3t-bot.local}"
+WIFI="${OP3T_WIFI:-op3t.local}"
 PORT="${OP3T_PORT:-22}"
 CTL="${TMPDIR:-/tmp}/op3t-ctl.$$"
 SSHO=(-p "$PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null

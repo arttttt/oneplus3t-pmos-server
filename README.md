@@ -15,7 +15,7 @@ into a 24/7 headless Linux server.
 | `build/install.sh` | End-to-end build+flash pipeline (Docker + pmbootstrap). Encodes the 3 fixes: kernel channel, `--sector-size 4096`, TWRP flashing. |
 | `build/Dockerfile.pmbootstrap` | Linux build env for pmbootstrap on macOS. |
 | `device/` | On-device helpers, installed into the rootfs: `op3t-power` (display/charge CLI), `op3t-battery-guard` (smart SoC-hold service) + its systemd unit / `/etc/default` / doas rule. |
-| `docs/SETUP.md` | Manual post-install steps: password, WiFi, Tailscale, bot deploy. |
+| `docs/SETUP.md` | Manual post-install steps: password, WiFi, Tailscale, service deploy. |
 
 ## Prerequisites
 

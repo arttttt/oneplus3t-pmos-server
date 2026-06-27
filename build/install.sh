@@ -41,7 +41,7 @@ CODENAME="oneplus3t"
 DEVICE="oneplus-oneplus3t"
 KERNEL="s6e3fa5"             # display panel variant (this unit; verify via lk2nd:panel)
 UI="console"                 # 'console' for bring-up; 'none' for production
-HOSTNAME="op3t-bot"
+HOSTNAME="op3t"
 PASSWORD="changeme"          # CHANGE after first boot via `passwd`
 SECTOR=4096                  # FIX 2: 4Kn UFS
 KERNELVER="6.12.10"          # msm8996-mainline fork tag: 6.3.1=no WiFi, 6.19.5=hangs, 6.12.10=boots+WiFi
