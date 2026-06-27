@@ -3,7 +3,7 @@
 Do these yourself, on the device. Get a shell with:
 
 ```
-bin/op3t.sh        # → option 5 "Open terminal"
+bin/op3t.sh        # → option 4 "Open terminal"
 # or directly:
 ssh user@172.16.42.1          # USB-net; password: changeme
 ```
