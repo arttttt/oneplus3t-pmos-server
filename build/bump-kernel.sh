@@ -27,5 +27,8 @@ if ! grep -q 'olddefconfig' "$AK"; then
 fi
 
 pmbootstrap checksum linux-postmarketos-qcom-msm8996
-pmbootstrap build --force linux-postmarketos-qcom-msm8996
-echo "kernel $VER built."
+# Build only if the .apk isn't already current (NOT --force): re-forcing a
+# rebuild of an up-to-date kernel just risks transient toolchain breakage in a
+# freshly-rebuilt container for no gain.
+pmbootstrap build linux-postmarketos-qcom-msm8996
+echo "kernel $VER ready."
