@@ -45,15 +45,18 @@ nmcli -g connection.autoconnect connection show "YOUR_SSID"   # should be yes
 
 ### Reach the device by WiFi from the Mac
 
-The menu auto-detects USB first, then WiFi. Point it at the WiFi IP:
+Nothing to configure — `bin/op3t.sh` discovers the phone automatically: it sweeps
+the Mac's own subnets (USB-net and WiFi) and identifies the device by its SSH
+host key, so it follows the phone across DHCP/IP changes. To pin an explicit
+address and skip discovery:
 
 ```
-OP3T_WIFI=192.168.1.50 bin/op3t.sh
+OP3T_HOST=192.168.1.50 bin/op3t.sh
 ```
 
-(Optional: for a stable `op3t.local` name instead of an IP, install mDNS:
-`doas apk add avahi && doas systemctl enable --now avahi-daemon` — then the
-default `OP3T_WIFI=op3t.local` works.)
+(Optional: install mDNS for a stable `op3t.local` name —
+`doas apk add avahi && doas systemctl enable --now avahi-daemon` — which the menu
+then picks up as a fast discovery candidate.)
 
 ---
 
@@ -184,7 +187,7 @@ doas rm /etc/doas.d/20-op3t.conf
 
 | What            | Command                                             |
 |-----------------|-----------------------------------------------------|
-| Menu            | `bin/op3t.sh`  (`OP3T_WIFI=<ip>` for WiFi/Tailscale)|
+| Menu            | `bin/op3t.sh`  (auto-discovers; `OP3T_HOST=<ip>` to pin)|
 | Shell           | `ssh user@<ip>` (pw set in step 1)                  |
 | Battery status  | `op3t-power charge status`                           |
 | Service logs    | `journalctl -u <name> -f`                           |
