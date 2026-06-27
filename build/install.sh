@@ -85,6 +85,14 @@ bump_kernel(){
   dx "sh /project/build/bump-kernel.sh '$KERNELVER'"
 }
 
+# stage the local op3t-helpers aport (op3t-power + battery-guard) into pmaports
+add_helpers_aport(){
+  log "stage op3t-helpers aport + checksum"
+  dx "rm -rf $WORK/cache_git/pmaports/temp/op3t-helpers; mkdir -p $WORK/cache_git/pmaports/temp; \
+      cp -r /project/build/aports/op3t-helpers $WORK/cache_git/pmaports/temp/ && \
+      pmbootstrap checksum op3t-helpers"
+}
+
 # ---- build ------------------------------------------------------------------
 build_image(){
   ensure_container
@@ -102,9 +110,10 @@ build_image(){
   dx "pmbootstrap config | grep -iE 'device|kernel|^ui|hostname|is_default'"
 
   bump_kernel
+  add_helpers_aport
 
-  log "pmbootstrap install (--no-split --sector-size $SECTOR)   # FIX 2"
-  dx "pmbootstrap -y install --no-split --sector-size $SECTOR --password '$PASSWORD' 2>&1 | tail -6"
+  log "pmbootstrap install (--no-split --sector-size $SECTOR + op3t-helpers)   # FIX 2"
+  dx "pmbootstrap -y install --no-split --sector-size $SECTOR --password '$PASSWORD' --add op3t-helpers 2>&1 | tail -6"
   dx "pmbootstrap shutdown 2>&1 | tail -1 || true"
 
   log "export images -> $PMOS_DIR"

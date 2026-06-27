@@ -1,0 +1,6 @@
+#!/bin/sh
+# Enable the battery-guard service on boot (systemd, offline-safe: just symlink).
+mkdir -p /etc/systemd/system/multi-user.target.wants
+ln -sf /usr/lib/systemd/system/op3t-battery-guard.service \
+	/etc/systemd/system/multi-user.target.wants/op3t-battery-guard.service
+exit 0

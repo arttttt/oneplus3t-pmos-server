@@ -1,0 +1,26 @@
+# Maintainer: artem <artembambalov1993@gmail.com>
+# Local pmaports package: OnePlus 3T power/display + smart battery-guard helpers.
+# Added to the image by build/install.sh via `pmbootstrap install --add op3t-helpers`.
+pkgname=op3t-helpers
+pkgver=1.0.0
+pkgrel=0
+pkgdesc="OnePlus 3T power/display CLI + smart battery-hold service"
+url="https://github.com/"
+arch="noarch"
+license="MIT"
+options="!check"
+install="$pkgname.post-install"
+source="op3t-power
+	op3t-battery-guard
+	op3t-battery-guard.service
+	op3t-battery-guard.default
+	"
+
+package() {
+	install -Dm755 "$srcdir/op3t-power"            "$pkgdir/usr/local/bin/op3t-power"
+	install -Dm755 "$srcdir/op3t-battery-guard"    "$pkgdir/usr/local/bin/op3t-battery-guard"
+	install -Dm644 "$srcdir/op3t-battery-guard.service" \
+		"$pkgdir/usr/lib/systemd/system/op3t-battery-guard.service"
+	install -Dm644 "$srcdir/op3t-battery-guard.default" \
+		"$pkgdir/etc/default/op3t-battery-guard"
+}

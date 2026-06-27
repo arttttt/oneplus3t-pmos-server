@@ -1,0 +1,26 @@
+#!/bin/sh
+# OP3T power helper — display + charge control (msm8996 / pmOS)
+# NOTE: manual `charge on/off/<mA>` is temporary — op3t-battery-guard reasserts
+# the input current limit every tick. Stop the service to override persistently.
+BL=/sys/class/backlight/994000.dsi.0
+ICL=/sys/class/power_supply/qcom-smbchg-usb/input_current_limit
+G=/sys/class/power_supply/bq27541-0
+root(){ [ "$(id -u)" = 0 ] && return; exec doas /usr/local/bin/op3t-power "$@"; }
+case "$1 $2" in
+  # NOTE: brightness only takes effect while the panel is awake. Once the kernel
+  # console-blank powers the panel down (DPMS Off after CONFIG consoleblank secs),
+  # there is no SSH-reachable way to wake it (DRM is atomic-KMS only). For a
+  # headless box that's fine — the screen powers itself down. Tune the auto-blank
+  # timeout with `display blank <secs>` (0 = never).
+  "display off") root "$@"; echo 0 > $BL/brightness 2>/dev/null; echo "display: OFF (dim; no-op if already auto-blanked)";;
+  "display on")  root "$@"; echo 255 > $BL/brightness 2>/dev/null; echo "display: ON (effective only while panel awake)";;
+  "display blank") root "$@"; echo "${2:-300}" > /sys/module/kernel/parameters/consoleblank 2>/dev/null && echo "console auto-blank = ${2:-300}s" || echo "consoleblank not runtime-writable (set via kernel cmdline)";;
+  "charge status")
+    echo "soc=$(cat $G/capacity)% status=$(cat $G/status) current=$(( $(cat $G/current_now)/1000 ))mA volt=$(( $(cat $G/voltage_now)/1000 ))mV health=$(cat $G/health) full=$(( $(cat $G/charge_full)/1000 ))/$(( $(cat $G/charge_full_design)/1000 ))mAh icl=$(( $(cat $ICL)/1000 ))mA";;
+  "charge target") root "$@"; v="${2:-50}"; sed -i "s/^TARGET=.*/TARGET=$v/" /etc/default/op3t-battery-guard && systemctl restart op3t-battery-guard && echo "battery hold target = ${v}%";;
+  "charge full")   root "$@"; sed -i "s/^TARGET=.*/TARGET=100/" /etc/default/op3t-battery-guard && systemctl restart op3t-battery-guard && echo "battery: charge to FULL (TARGET=100)";;
+  "charge off")  root "$@"; echo 0 > $ICL; echo "charge: OFF (icl=0)";;
+  "charge on")   root "$@"; echo 1500000 > $ICL; echo "charge: ON (icl=1500mA)";;
+  "charge "*)    root "$@"; echo $(( ${2:-1500}*1000 )) > $ICL; echo "icl=${2}mA";;
+  *) echo "usage: op3t-power {display on|off|blank <secs>|charge status|charge target <pct>|charge full|charge on|charge off|charge <mA>}"; exit 1;;
+esac
