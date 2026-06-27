@@ -35,9 +35,10 @@ bin/op3t.sh                   # manage the running device
 
 ## Status / notes
 
-- Boots: pmOS, kernel `6.x-msm8996` (msm8996-mainline fork). Console UI, systemd.
+- Boots: pmOS, kernel **6.12.10-msm8996** (msm8996-mainline fork). Console UI, systemd.
 - Display, USB-net, charging, battery management: working.
-- **WiFi/BT (QCA6174a): under investigation.** Chip is confirmed alive (the
-  downstream Android kernel enumerates it on PCIe as `168c:003e`), but the
-  mainline kernel fails to train the PCIe link (`Phy link never came up`).
-  Trying newer fork kernels (6.12+) for the fix.
+- **WiFi + Bluetooth (QCA6174a): WORKING.** Required two things: kernel **6.12.10**
+  (6.3.1 has the bug, 6.19.5 doesn't boot) **and** kernel cmdline
+  **`pcie_aspm=off pci=nomsi`** (FIX 4) — mainline's PCIe ASPM/L1ss handling
+  otherwise blocks the QCA6174 link training (`Phy link never came up`).
+  Both are baked into `build/install.sh`.

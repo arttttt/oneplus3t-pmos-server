@@ -44,6 +44,8 @@ UI="console"                 # 'console' for bring-up; 'none' for production
 HOSTNAME="op3t-bot"
 PASSWORD="changeme"          # CHANGE after first boot via `passwd`
 SECTOR=4096                  # FIX 2: 4Kn UFS
+KERNELVER="6.12.10"          # msm8996-mainline fork tag: 6.3.1=no WiFi, 6.19.5=hangs, 6.12.10=boots+WiFi
+CMDLINE_EXTRA="pcie_aspm=off pci=nomsi"  # FIX 4: ASPM/L1ss blocks QCA6174 PCIe link -> kills WiFi/BT
 
 CHROOT_ROOTFS="$WORK/chroot_rootfs_${DEVICE}"
 CHROOT_NATIVE="$WORK/chroot_native"
@@ -77,6 +79,12 @@ ensure_container(){
   dxr "mountpoint -q /dev || mount -t devtmpfs devtmpfs /dev 2>/dev/null || true; [ -e /dev/loop-control ] || mount -t devtmpfs devtmpfs /dev 2>/dev/null || true; echo devtmpfs-ok"
 }
 
+# ---- kernel version bump (msm8996-mainline fork) ----------------------------
+bump_kernel(){
+  log "bump kernel aport -> $KERNELVER and build (see build/bump-kernel.sh)"
+  dx "sh /project/build/bump-kernel.sh '$KERNELVER'"
+}
+
 # ---- build ------------------------------------------------------------------
 build_image(){
   ensure_container
@@ -93,6 +101,8 @@ build_image(){
   dx "echo 'pmaports branch:'; git -C $WORK/cache_git/pmaports branch --show-current"
   dx "pmbootstrap config | grep -iE 'device|kernel|^ui|hostname|is_default'"
 
+  bump_kernel
+
   log "pmbootstrap install (--no-split --sector-size $SECTOR)   # FIX 2"
   dx "pmbootstrap -y install --no-split --sector-size $SECTOR --password '$PASSWORD' 2>&1 | tail -6"
   dx "pmbootstrap shutdown 2>&1 | tail -1 || true"
@@ -104,9 +114,32 @@ build_image(){
   ls -lh "$PMOS_DIR/boot.img" "$PMOS_DIR/rootfs.img"
 }
 
+# ---- FIX 4: bake the PCIe cmdline workaround into boot.img -------------------
+# pmbootstrap ignores deviceinfo_kernel_cmdline here, so patch the Android boot
+# header cmdline field (offset 64, 512 B) directly. UUID/kernel untouched.
+patch_cmdline(){
+  [ -n "$CMDLINE_EXTRA" ] || return 0
+  log "patch boot.img cmdline += '$CMDLINE_EXTRA'"
+  python3 - "$PMOS_DIR/boot.img" "$CMDLINE_EXTRA" <<'PY'
+import sys
+f, extra = sys.argv[1], sys.argv[2]
+d = bytearray(open(f, "rb").read())
+assert d[:8] == b"ANDROID!", "not an Android boot image"
+cmd = d[64:64+512].split(b"\x00", 1)[0].decode("latin1")
+if extra in cmd:
+    print("cmdline already has it:", cmd); sys.exit(0)
+new = (cmd + " " + extra).encode("latin1")
+assert len(new) < 512, "cmdline too long for boot hdr field"
+d[64:64+512] = new + b"\x00" * (512 - len(new))
+open(f, "wb").write(d)
+print("new cmdline:", new.decode())
+PY
+}
+
 # ---- combined boot (lk2nd@0 + pmOS boot@512K), flashed raw to `boot` ---------
 combine(){
   [ -f "$PMOS_DIR/boot.img" ] || { echo "run 'build' first" >&2; exit 1; }
+  patch_cmdline
   log "build combined.img = lk2nd (padded 512K) + boot.img"
   dd if="$LK2ND" of="$PMOS_DIR/combined.img" bs=512k conv=sync 2>/dev/null
   cat "$PMOS_DIR/boot.img" >> "$PMOS_DIR/combined.img"
