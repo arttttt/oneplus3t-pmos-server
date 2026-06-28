@@ -84,17 +84,12 @@ doas tailscale up                # one-time browser login
 ```
 
 In the Tailscale admin console (login.tailscale.com), enable **MagicDNS** +
-**HTTPS certificates** for the tailnet. Then proxy your service's local port
-(example: app listening on localhost:8080):
+**HTTPS certificates** for the tailnet (required for a valid `…ts.net` cert).
 
-```
-doas tailscale serve --bg 8080   # serve localhost:8080 over tailnet HTTPS (:443)
-tailscale serve status           # shows the https://op3t.<tailnet>.ts.net URL
-```
-
-Point the service's base URL at that `…ts.net`. It listens on the **tailnet only**
-— no public surface by construction, so `serve` can stay on permanently and the
-bot needs no funnel/exposure logic.
+You don't run `tailscale serve` by hand — `build/setup-host.sh` (next section)
+publishes both Portainer (`https://op3t.<tailnet>.ts.net`, 443→9443) and the bot
+(`…ts.net:8443` → `127.0.0.1:8000`) over the tailnet. `serve` is mesh-only and can
+stay on permanently — no funnel, no public surface, no port-forwarding.
 
 **Opening the links:** the device you tap a link from (your phone) must be on the
 tailnet — run the Tailscale app there (you can keep it on only while confirming an
@@ -106,50 +101,41 @@ action). That's the trade-off of mesh-only vs. a public URL.
 
 ---
 
-## 5. Deploy your service (generic example)
+## 5. Container platform + deploy the bot (Docker + Portainer)
 
-It's a normal headless Linux server — run whatever you like under systemd.
-Example uses a Node app; swap for your runtime/app.
-
-```
-doas apk add nodejs npm git   # or python3, etc.
-git clone <YOUR_REPO_URL> ~/app
-cd ~/app
-npm ci                      # or: npm install
-
-# secrets / config — never commit these:
-nano ~/app/.env
-chmod 600 ~/app/.env
-```
-
-Run it under systemd so it survives reboots and restarts on crash:
+The whole host setup is scripted in **`build/setup-host.sh`** — copy it over and
+run it once:
 
 ```
-doas tee /etc/systemd/system/myapp.service >/dev/null <<'EOF'
-[Unit]
-Description=My service
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-WorkingDirectory=/home/user/app
-ExecStart=/usr/bin/node /home/user/app/index.js   # adjust to your entrypoint
-EnvironmentFile=/home/user/app/.env
-Restart=always
-RestartSec=5
-User=user
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-doas systemctl daemon-reload
-doas systemctl enable --now myapp
-journalctl -u myapp -f               # watch logs
+scp build/setup-host.sh user@<ip>:/tmp/
+ssh -t user@<ip> 'doas sh /tmp/setup-host.sh'
 ```
 
-Outbound-only services (long-poll bots, agents, schedulers) need just internet —
-no public IP or port-forwarding (pairs well with Tailscale).
+Idempotent; it installs Docker + the compose plugin, fixes the containerd unit
+(the pmOS package ships a wrong `ExecStart` path → `203/EXEC`, so dockerd hangs),
+gives containers a public DNS resolver and opens nftables forwarding for Docker
+bridges (without both, a container starts but can't reach the internet), brings up
+**Portainer** on `127.0.0.1:9443`, and publishes Portainer (443→9443) + the bot
+(8443→8000) over `tailscale serve`.
+
+Then the inherently-manual steps (secrets / UI / one-time — never scripted):
+
+1. **Portainer admin** — open `https://op3t.<tailnet>.ts.net` and create the admin
+   user within 5 min. If it timed out: `doas docker restart portainer`, then paste
+   the token from `doas docker logs portainer 2>&1 | grep -i token`.
+2. **Publish the image** (once) — GitHub → your **Packages** → `cmidcabot` →
+   *Package settings* → *Change visibility* → **Public**. (CI at
+   `arttttt/CMIDCABot` builds & pushes `ghcr.io/arttttt/cmidcabot` on every push to
+   `main` / `v*` tag — the device never builds anything.)
+3. **Deploy the bot stack** — Portainer → *Stacks* → *Add stack* → paste the bot
+   repo's `deploy/compose.yaml` → fill the env vars (`TELEGRAM_BOT_TOKEN`,
+   `OWNER_TELEGRAM_ID`, `MASTER_ENCRYPTION_KEY`, `SOLANA_RPC_URL`,
+   `JUPITER_API_KEY`, `PUBLIC_URL=https://op3t.<tailnet>.ts.net:8443`) → Deploy.
+4. ⚠️ **Back up `MASTER_ENCRYPTION_KEY` and the `cmidcabot_data` volume** off the
+   device — losing the key means losing every encrypted wallet.
+
+**Updates:** push to the bot repo → CI publishes a new tag → in Portainer pick the
+tag and redeploy. No on-device build = no CPU/heat/flash spike on deploy.
 
 ---
 
