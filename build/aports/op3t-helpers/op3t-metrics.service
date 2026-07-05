@@ -1,0 +1,6 @@
+[Unit]
+Description=Sample op3t battery/thermal metrics to CSV
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/op3t-metrics-sample

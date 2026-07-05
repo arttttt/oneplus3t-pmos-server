@@ -3,19 +3,26 @@
 # Added to the image by build/install.sh via `pmbootstrap install --add op3t-helpers`.
 pkgname=op3t-helpers
 pkgver=1.0.0
-pkgrel=4
+pkgrel=5
 pkgdesc="OnePlus 3T power/display CLI + smart battery-hold service + headless defaults"
 url="https://github.com/"
 arch="noarch"
 license="MIT"
 options="!check"
-depends="tzdata"          # for the UTC zoneinfo shipped below
+depends="tzdata python3"  # tzdata: UTC zoneinfo below; python3: op3t-metrics-web
 source="op3t-power
 	op3t-battery-guard
 	op3t-battery-guard.service
 	op3t-battery-guard.default
 	op3t-helpers.preset
 	wifi-powersave.conf
+	op3t-metrics-sample
+	op3t-metrics.service
+	op3t-metrics.timer
+	op3t-metrics-web
+	op3t-metrics-web@.service
+	op3t-metrics-web.socket
+	op3t-metrics.nft
 	"
 
 package() {
@@ -40,6 +47,22 @@ package() {
 	# Disable Wi-Fi power-save (rationale in the conf file).
 	install -Dm644 "$srcdir/wifi-powersave.conf" \
 		"$pkgdir/etc/NetworkManager/conf.d/90-op3t-wifi-powersave.conf"
+
+	# Metrics: 5-min CSV sampler (timer) + on-demand web viewer on :8088
+	# (socket-activated — nothing resident between requests) + the nftables
+	# opening for the viewer port.
+	install -Dm755 "$srcdir/op3t-metrics-sample" "$pkgdir/usr/bin/op3t-metrics-sample"
+	install -Dm755 "$srcdir/op3t-metrics-web"    "$pkgdir/usr/bin/op3t-metrics-web"
+	install -Dm644 "$srcdir/op3t-metrics.service" \
+		"$pkgdir/usr/lib/systemd/system/op3t-metrics.service"
+	install -Dm644 "$srcdir/op3t-metrics.timer" \
+		"$pkgdir/usr/lib/systemd/system/op3t-metrics.timer"
+	install -Dm644 "$srcdir/op3t-metrics-web@.service" \
+		"$pkgdir/usr/lib/systemd/system/op3t-metrics-web@.service"
+	install -Dm644 "$srcdir/op3t-metrics-web.socket" \
+		"$pkgdir/usr/lib/systemd/system/op3t-metrics-web.socket"
+	install -Dm644 "$srcdir/op3t-metrics.nft" \
+		"$pkgdir/etc/nftables.d/50_op3t_metrics.nft"
 
 	# Headless server defaults to UTC (no DST; one timescale in logs). musl
 	# defaults to UTC already, but make it explicit so timedatectl reports it.

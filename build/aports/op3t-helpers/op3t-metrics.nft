@@ -1,0 +1,9 @@
+#!/usr/sbin/nft -f
+
+# Tailnet-only on purpose: the metrics viewer must not be reachable from the
+# LAN or anywhere else — only from the mesh.
+table inet filter {
+	chain input {
+		iifname "tailscale0" tcp dport 8088 accept comment "op3t-metrics web viewer (tailnet only)"
+	}
+}

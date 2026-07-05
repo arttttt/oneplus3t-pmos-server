@@ -1,0 +1,9 @@
+[Unit]
+Description=op3t metrics web viewer (per-connection, socket-activated)
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/op3t-metrics-web
+StandardInput=socket
+StandardOutput=socket
+StandardError=journal

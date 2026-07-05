@@ -4,3 +4,5 @@
 # symlinks created instead of removed.
 enable op3t-battery-guard.service
 enable systemd-timesyncd.service
+enable op3t-metrics.timer
+enable op3t-metrics-web.socket

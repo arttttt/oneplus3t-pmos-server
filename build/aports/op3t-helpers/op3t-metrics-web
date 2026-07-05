@@ -1,0 +1,233 @@
+#!/usr/bin/env python3
+# One-shot HTTP responder for op3t metrics (systemd socket activation,
+# Accept=yes: stdin/stdout ARE the accepted connection). Nothing stays
+# resident between requests — the whole cost is one python start per view.
+#
+# GET  /            page: live readings + charts from the sampler's CSV
+# GET  /metrics.csv the raw CSV
+# POST /clear       wipe the collected history (keeps the header)
+import json
+import os
+import sys
+import time
+
+CSV = os.environ.get("OP3T_METRICS_CSV", "/var/lib/op3t-metrics/metrics.csv")
+STAT = os.path.join(os.path.dirname(CSV), ".stat-prev")
+BAT = "/sys/class/power_supply/bq27541-0"
+USB = "/sys/class/power_supply/qcom-smbchg-usb"
+HDR = "epoch,soc,ma,mv,tbat,tcpu,usb,cpu,c0,c1,c2,c3"
+TAIL_ROWS = 2016  # 7 days of 5-minute samples
+
+
+def read(path):
+    try:
+        with open(path) as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def cpu_loads():
+    """Busy % over a 0.4 s window: {'cpu': overall, 'cpu0': ..., ...}."""
+    def snap():
+        out = {}
+        with open("/proc/stat") as f:
+            for ln in f:
+                if ln.startswith("cpu"):
+                    p = ln.split()
+                    out[p[0]] = (sum(map(int, p[1:])), int(p[4]) + int(p[5]))
+        return out
+    a = snap()
+    time.sleep(0.4)
+    b = snap()
+    loads = {}
+    for k, (tb, ib) in b.items():
+        dt, di = tb - a[k][0], ib - a[k][1]
+        loads[k] = round(100 * (dt - di) / dt, 1) if dt > 0 else 0.0
+    return loads
+
+
+def live():
+    tcpu = 0
+    base = "/sys/class/thermal"
+    try:
+        for z in os.listdir(base):
+            if read(f"{base}/{z}/type").startswith("cpu"):
+                tcpu = max(tcpu, int(read(f"{base}/{z}/temp") or 0))
+    except OSError:
+        pass
+    loads = cpu_loads()
+    cores = [str(loads[k]) for k in sorted(loads) if k != "cpu"]
+    return {
+        "soc": read(f"{BAT}/capacity") or "?",
+        "ma": int(read(f"{BAT}/current_now") or 0) // 1000,
+        "tbat": "%.1f" % (int(read(f"{BAT}/temp") or 0) / 10),
+        "tcpu": "%.1f" % (tcpu / 1000),
+        "usb": "yes" if read(f"{USB}/online") == "1" else "NO",
+        "cpu": str(loads.get("cpu", 0)),
+        "cores": " / ".join(cores),
+    }
+
+
+def rows():
+    try:
+        with open(CSV) as f:
+            lines = f.readlines()[1:][-TAIL_ROWS:]
+    except OSError:
+        lines = []
+    out = []
+    for ln in lines:
+        p = ln.strip().split(",")
+        if len(p) == 12:
+            try:
+                out.append([int(p[0]), float(p[1]), float(p[2]),  # epoch soc ma
+                            float(p[4]), float(p[5]), int(p[6] or 0),  # tbat tcpu usb
+                            float(p[7]), float(p[8]), float(p[9]),  # cpu c0 c1
+                            float(p[10]), float(p[11])])  # c2 c3
+            except ValueError:
+                pass
+    return out  # [epoch, soc, ma, tbat, tcpu, usb, cpu, c0, c1, c2, c3]
+
+
+PAGE = """<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>op3t metrics</title><style>
+body{font:14px system-ui;background:#111;color:#ddd;margin:20px auto;max-width:1440px;padding:0 12px}
+.now{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
+.card{background:#1c1c1c;border-radius:8px;padding:10px 16px;color:#999}
+.card b{display:block;font-size:22px;color:#eee;margin-top:2px}
+.card small{color:#888}
+.charts{display:grid;grid-template-columns:1fr;gap:0 20px;margin-top:6px}
+@media(min-width:900px){.charts{grid-template-columns:1fr 1fr}.charts .ch:last-child{grid-column:1/-1}}
+canvas{width:100%;height:170px;background:#1c1c1c;border-radius:8px}
+h3{margin:18px 0 6px;font-weight:600;font-size:13px;color:#999}
+a{color:#7ab}
+</style></head><body>
+<div class="now">
+<div class="card">charge<b>__SOC__%</b></div>
+<div class="card">current<b>__MA__ mA</b></div>
+<div class="card">battery temp<b>__TBAT__°C</b></div>
+<div class="card">CPU temp<b>__TCPU__°C</b></div>
+<div class="card">CPU load<b>__CPU__%</b><small>__CORES__</small></div>
+<div class="card">external power<b>__USB__</b></div>
+</div>
+<div class="charts">
+<div class="ch"><h3>CPU temperature, °C</h3><canvas id="ct"></canvas></div>
+<div class="ch"><h3>battery temperature, °C</h3><canvas id="cb"></canvas></div>
+<div class="ch"><h3>CPU load, % — overall (red) and per core (grey)</h3><canvas id="cl"></canvas></div>
+<div class="ch"><h3>state of charge, %</h3><canvas id="cs"></canvas></div>
+<div class="ch"><h3>battery current, mA (+ charge / − discharge; red background — no external power)</h3><canvas id="cc"></canvas></div>
+</div>
+<p>full <a href="/metrics.csv">metrics.csv</a> · <a href="#" onclick="clearData();return false">clear history</a></p>
+<script>
+const D = __ROWS__; // [epoch, soc, ma, tbat, tcpu, usb, cpu, c0, c1, c2, c3]
+function chart(id, series, colors, opts) {
+  opts = opts || {};
+  const cv = document.getElementById(id), dpr = devicePixelRatio || 1;
+  cv.width = cv.clientWidth * dpr; cv.height = cv.clientHeight * dpr;
+  const g = cv.getContext("2d"); g.scale(dpr, dpr);
+  const W = cv.clientWidth, H = cv.clientHeight, L = 44, R = 8, T = 8, B = 20;
+  if (!D.length) { g.fillStyle = "#777"; g.fillText("no data yet", W/2-30, H/2); return; }
+  const xs = D.map(r => r[0]);
+  const x0 = xs[0], x1 = xs[xs.length-1] || x0+1;
+  let ys = [];
+  series.forEach(si => D.forEach(r => ys.push(r[si])));
+  let y0 = Math.min(...ys), y1 = Math.max(...ys);
+  if (y0 === y1) { y0 -= 1; y1 += 1; }
+  const pad = (y1 - y0) * 0.1; y0 -= pad; y1 += pad;
+  const X = t => L + (t - x0) / (x1 - x0) * (W - L - R);
+  const Y = v => T + (1 - (v - y0) / (y1 - y0)) * (H - T - B);
+  if (opts.noPower) {
+    g.fillStyle = "rgba(255,80,80,.14)";
+    for (let i = 0; i < D.length; i++) if (D[i][5] === 0) {
+      const xa = i ? (X(D[i-1][0]) + X(D[i][0])) / 2 : X(D[i][0]);
+      const xb = i+1 < D.length ? (X(D[i][0]) + X(D[i+1][0])) / 2 : X(D[i][0]);
+      g.fillRect(xa, T, Math.max(xb - xa, 1), H - T - B);
+    }
+  }
+  g.strokeStyle = "#333"; g.fillStyle = "#888"; g.font = "10px system-ui";
+  for (let i = 0; i <= 4; i++) {
+    const v = y0 + (y1 - y0) * i / 4, y = Y(v);
+    g.beginPath(); g.moveTo(L, y); g.lineTo(W - R, y); g.stroke();
+    g.fillText(v.toFixed(Math.abs(y1-y0) < 10 ? 1 : 0), 4, y + 3);
+  }
+  for (let i = 0; i <= 5; i++) {
+    const t = x0 + (x1 - x0) * i / 5, d = new Date(t * 1000);
+    const lbl = (x1 - x0 > 86400 ? (d.getDate() + "." + (d.getMonth()+1) + " ") : "") +
+      String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0");
+    g.fillText(lbl, Math.min(X(t), W - 60), H - 6);
+  }
+  series.forEach((si, k) => {
+    g.strokeStyle = colors[k];
+    g.lineWidth = (opts.widths && opts.widths[k]) || 1.6;
+    g.beginPath();
+    D.forEach((r, i) => i ? g.lineTo(X(r[0]), Y(r[si])) : g.moveTo(X(r[0]), Y(r[si])));
+    g.stroke();
+  });
+}
+function drawAll() {
+  chart("ct", [4], ["#e8a33d"]);
+  chart("cb", [3], ["#5cb85c"]);
+  chart("cl", [7, 8, 9, 10, 6], ["#555", "#555", "#555", "#555", "#e05c5c"],
+        {widths: [1, 1, 1, 1, 2.2]});
+  chart("cs", [1], ["#7ab8e8"]);
+  chart("cc", [2], ["#c48fe0"], {noPower: true});
+}
+drawAll();
+let rt;
+addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(drawAll, 150); });
+function clearData() {
+  if (!confirm("Wipe the collected history?")) return;
+  fetch("/clear", {method: "POST"}).then(() => location.reload());
+}
+</script></body></html>"""
+
+
+def respond(status, ctype, body):
+    data = body.encode() if isinstance(body, str) else body
+    hdr = (f"HTTP/1.1 {status}\r\nContent-Type: {ctype}; charset=utf-8\r\n"
+           f"Content-Length: {len(data)}\r\nConnection: close\r\n\r\n")
+    out = sys.stdout.buffer
+    out.write(hdr.encode() + data)
+    out.flush()
+
+
+def main():
+    req = sys.stdin.buffer.readline().decode("latin1", "replace").split(" ")
+    method = req[0] if req else "GET"
+    path = req[1] if len(req) > 1 else "/"
+    # drain the request headers so the client isn't reset mid-send
+    while True:
+        ln = sys.stdin.buffer.readline()
+        if not ln or ln in (b"\r\n", b"\n"):
+            break
+    if path == "/metrics.csv":
+        try:
+            with open(CSV, "rb") as f:
+                respond("200 OK", "text/csv", f.read())
+        except OSError:
+            respond("404 Not Found", "text/plain", "no csv yet")
+        return
+    if path == "/clear" and method == "POST":
+        with open(CSV, "w") as f:
+            f.write(HDR + "\n")
+        try:
+            os.remove(STAT)
+        except OSError:
+            pass
+        respond("200 OK", "text/plain", "cleared")
+        return
+    if path != "/":
+        respond("404 Not Found", "text/plain", "not found")
+        return
+    v = live()
+    page = (PAGE.replace("__ROWS__", json.dumps(rows()))
+                .replace("__SOC__", str(v["soc"])).replace("__MA__", str(v["ma"]))
+                .replace("__TBAT__", v["tbat"]).replace("__TCPU__", v["tcpu"])
+                .replace("__CPU__", v["cpu"]).replace("__CORES__", v["cores"])
+                .replace("__USB__", v["usb"]))
+    respond("200 OK", "text/html", page)
+
+
+if __name__ == "__main__":
+    main()

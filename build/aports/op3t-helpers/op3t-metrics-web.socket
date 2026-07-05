@@ -1,0 +1,9 @@
+[Unit]
+Description=op3t metrics web viewer socket
+
+[Socket]
+ListenStream=8088
+Accept=yes
+
+[Install]
+WantedBy=sockets.target

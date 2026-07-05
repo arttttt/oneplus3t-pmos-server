@@ -1,0 +1,64 @@
+#!/bin/sh
+# Append one CSV line of battery/thermal/load state (fired by
+# op3t-metrics.timer, every 5 min). One-shot by design: nothing stays
+# resident, so the sampling cost is ~50 ms of CPU per run.
+#
+# Columns: epoch,soc,ma,mv,tbat,tcpu,usb,cpu,c0,c1,c2,c3
+#   soc  — battery %, from the bq27541 coulomb counter
+#   ma   — battery current, mA (mainline convention: + charging, - discharging)
+#   mv   — battery voltage, mV
+#   tbat — battery temperature, °C (fuel gauge)
+#   tcpu — hottest cpu*-thermal zone, °C
+#   usb  — charger input present (1/0)
+#   cpu  — overall CPU busy % averaged since the PREVIOUS sample (delta of
+#          /proc/stat vs the snapshot kept in .stat-prev), c0..c3 per core
+set -u
+CSV=${OP3T_METRICS_CSV:-/var/lib/op3t-metrics/metrics.csv}
+STAT="${CSV%/*}/.stat-prev"
+BAT=/sys/class/power_supply/bq27541-0
+USB=/sys/class/power_supply/qcom-smbchg-usb
+HDR="epoch,soc,ma,mv,tbat,tcpu,usb,cpu,c0,c1,c2,c3"
+
+r() { cat "$1" 2>/dev/null || echo ""; }
+
+mkdir -p "${CSV%/*}"
+# format change: rotate an old-format file aside instead of mixing row widths
+if [ -f "$CSV" ] && [ "$(head -1 "$CSV")" != "$HDR" ]; then
+	mv "$CSV" "$CSV.v1"
+fi
+[ -f "$CSV" ] || echo "$HDR" > "$CSV"
+
+cur=$(grep '^cpu' /proc/stat)
+if [ ! -f "$STAT" ]; then
+	# first run ever: no previous snapshot — measure a 1 s window instead
+	printf '%s\n' "$cur" > "$STAT"
+	sleep 1
+	cur=$(grep '^cpu' /proc/stat)
+fi
+# busy% = (Δtotal - Δ(idle+iowait)) / Δtotal, per aggregate and per core
+loads=$(printf '%s\n' "$cur" | awk '
+	NR==FNR { for (i=2;i<=NF;i++) t[$1]+=$i; idle[$1]=$5+$6; next }
+	{ for (i=2;i<=NF;i++) T[$1]+=$i; IDLE[$1]=$5+$6 }
+	END {
+		n = split("cpu cpu0 cpu1 cpu2 cpu3", o, " ")
+		for (k=1; k<=n; k++) {
+			c=o[k]; dt=T[c]-t[c]; di=IDLE[c]-idle[c]
+			printf "%s%.1f", (k>1 ? "," : ""), (dt>0 ? 100*(dt-di)/dt : 0)
+		}
+	}' "$STAT" -)
+printf '%s\n' "$cur" > "$STAT"
+
+tcpu=""
+for z in /sys/class/thermal/thermal_zone*; do
+	case "$(r "$z/type")" in
+	cpu*-thermal) t=$(r "$z/temp"); [ -n "$t" ] && [ "$t" -gt "${tcpu:-0}" ] && tcpu=$t ;;
+	esac
+done
+
+ma=$(r "$BAT/current_now");  ma=$(( ${ma:-0} / 1000 ))
+mv=$(r "$BAT/voltage_now");  mv=$(( ${mv:-0} / 1000 ))
+tbat=$(awk -v t="$(r "$BAT/temp")" 'BEGIN{printf "%.1f", t/10}')
+tcpu=$(awk -v t="${tcpu:-0}" 'BEGIN{printf "%.1f", t/1000}')
+
+printf '%s,%s,%s,%s,%s,%s,%s,%s\n' \
+	"$(date +%s)" "$(r "$BAT/capacity")" "$ma" "$mv" "$tbat" "$tcpu" "$(r "$USB/online")" "$loads" >> "$CSV"
