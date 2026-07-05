@@ -1,0 +1,71 @@
+# Kernel for the OnePlus 3T headless server. Fork of mainline
+# (github.com/arttttt/linux-op3t, branch op3t/7.2) carrying the OP3T patchset.
+# Config lineage: linux-postmarketos-qcom-msm8996 6.19.5 migrated once to
+# 7.2-rc1 via olddefconfig; maintained explicitly in this aport from then on
+# (edit deliberately via scripts/config + a commit, never regenerate blindly).
+maintainer="artem <artembambalov1993@gmail.com>"
+_flavor="op3t"
+pkgname=linux-$_flavor
+pkgver=7.2_rc1
+pkgrel=0
+pkgdesc="Mainline kernel fork for the OnePlus 3T (msm8996pro) headless server"
+arch="aarch64"
+_carch="arm64"
+url="https://github.com/arttttt/linux-op3t"
+license="GPL-2.0-only"
+options="!strip !check !tracedeps
+	pmb:cross-native
+	pmb:kconfigcheck-community
+"
+makedepends="
+	bison
+	clang
+	findutils
+	flex
+	installkernel
+	lld
+	llvm
+	openssl-dev
+	perl
+	python3
+	zstd
+"
+
+# Source: pinned to a commit on the op3t/7.2 branch (GitHub names the
+# extracted directory <repo>-<ref> for the ref given in the archive URL).
+_commit="dc59e4fea9d83f03bad6bddf3fa2e52491777482"
+source="
+	linux-op3t-$_commit.tar.gz::$url/archive/$_commit.tar.gz
+	config-$_flavor.$arch
+"
+builddir="$srcdir/linux-op3t-$_commit"
+
+prepare() {
+	default_prepare
+	cp "$srcdir/config-$_flavor.$CARCH" .config
+}
+
+build() {
+	unset LDFLAGS
+	make ARCH="$_carch" LLVM=1 \
+		KBUILD_BUILD_VERSION="$((pkgrel + 1 ))-$_flavor"
+}
+
+package() {
+	install -Dm644 "$builddir/arch/$_carch/boot/Image.gz" \
+		"$pkgdir/boot/vmlinuz"
+
+	install -D "$builddir/include/config/kernel.release" \
+		"$pkgdir/usr/share/kernel/$_flavor/kernel.release"
+
+	make modules_install dtbs_install \
+		ARCH="$_carch" \
+		LLVM=1 \
+		INSTALL_MOD_PATH="$pkgdir" \
+		INSTALL_MOD_STRIP=1 \
+		INSTALL_DTBS_PATH="$pkgdir"/boot/dtbs
+}
+sha512sums="
+14457110b2f900d4d096a6e13f190b3ad2bf7769bc7a115958b8e935e6dd8d50eef3fd03f359aff28cf8b5556168295d2a4613bf71263f8fcfa9656a6e87b26c  linux-op3t-dc59e4fea9d83f03bad6bddf3fa2e52491777482.tar.gz
+ec56e6aaeba2ee1661b3cdd06057725e89435971b958713f5695c312c117d31f9406f3232f4c1f059bf91b15df0571d0c9bff89a0f4b565be842665d2052c64f  config-op3t.aarch64
+"
