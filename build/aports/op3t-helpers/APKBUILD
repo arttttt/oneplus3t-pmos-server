@@ -3,7 +3,7 @@
 # Added to the image by build/install.sh via `pmbootstrap install --add op3t-helpers`.
 pkgname=op3t-helpers
 pkgver=1.0.0
-pkgrel=3
+pkgrel=4
 pkgdesc="OnePlus 3T power/display CLI + smart battery-hold service + headless defaults"
 url="https://github.com/"
 arch="noarch"
@@ -15,6 +15,7 @@ source="op3t-power
 	op3t-battery-guard.service
 	op3t-battery-guard.default
 	op3t-helpers.preset
+	wifi-powersave.conf
 	"
 
 package() {
@@ -35,6 +36,10 @@ package() {
 	# fresh boot — no persistent RTC on mainline msm8996 — until it syncs online).
 	install -Dm644 "$srcdir/op3t-helpers.preset" \
 		"$pkgdir/usr/lib/systemd/system-preset/90-op3t-helpers.preset"
+
+	# Disable Wi-Fi power-save (rationale in the conf file).
+	install -Dm644 "$srcdir/wifi-powersave.conf" \
+		"$pkgdir/etc/NetworkManager/conf.d/90-op3t-wifi-powersave.conf"
 
 	# Headless server defaults to UTC (no DST; one timescale in logs). musl
 	# defaults to UTC already, but make it explicit so timedatectl reports it.
