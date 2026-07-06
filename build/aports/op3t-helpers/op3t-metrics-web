@@ -153,7 +153,8 @@ function chart(id, series, colors, opts) {
   }
   for (let i = 0; i <= 5; i++) {
     const t = x0 + (x1 - x0) * i / 5, d = new Date(t * 1000);
-    const lbl = (x1 - x0 > 86400 ? (d.getDate() + "." + (d.getMonth()+1) + " ") : "") +
+    const lbl = (x1 - x0 > 86400 ?
+        (String(d.getMonth()+1).padStart(2,"0") + "." + String(d.getDate()).padStart(2,"0") + " ") : "") +
       String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0");
     g.fillText(lbl, Math.min(X(t), W - 60), H - 6);
   }

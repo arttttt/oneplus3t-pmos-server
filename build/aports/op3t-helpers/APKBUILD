@@ -3,7 +3,7 @@
 # Added to the image by build/install.sh via `pmbootstrap install --add op3t-helpers`.
 pkgname=op3t-helpers
 pkgver=1.0.0
-pkgrel=5
+pkgrel=6
 pkgdesc="OnePlus 3T power/display CLI + smart battery-hold service + headless defaults"
 url="https://github.com/"
 arch="noarch"
