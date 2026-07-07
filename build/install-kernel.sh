@@ -61,7 +61,7 @@ fi
 KVER=$(docker exec "$CONTAINER" sh -lc "ls $CHROOT_ROOTFS/lib/modules | tail -1" | tr -d '\r')
 [ -n "$KVER" ] || { echo "no /lib/modules in container rootfs" >&2; exit 1; }
 log "kernel version: $KVER — tar its modules"
-docker exec "$CONTAINER" sh -lc "tar -C / -czf - lib/modules/$KVER" > "$STAGE/modules.tar.gz"
+docker exec "$CONTAINER" sh -lc "tar -C '$CHROOT_ROOTFS' -czf - lib/modules/$KVER" > "$STAGE/modules.tar.gz"
 
 # banner sanity
 python3 - "$STAGE/boot.img" <<'PY'
