@@ -135,15 +135,17 @@ while :; do
     1) R 'echo "uptime:$(uptime)"; echo; free -m | head -2; echo; op3t-power charge status'; pause ;;
     2) printf "  target SoC %% [50]: "; read -r t; set_target "${t:-50}"; pause ;;
     3) echo "  scanning networks…"
-       mapfile -t _raw < <(R "nmcli -t -f SIGNAL,SSID dev wifi list 2>/dev/null")
-       unset _seen 2>/dev/null; declare -A _seen; _rows=()
+       # bash 3.2 (macOS default) has no mapfile / associative arrays, so read
+       # directly and dedup SSIDs via a delimited seen-string.
+       _rows=(); _seen="|"
        # strongest first, drop blank/duplicate SSIDs; line is "SIGNAL:SSID"
        while IFS= read -r line; do
          [ -n "$line" ] || continue
          sig="${line%%:*}"; ssid="${line#*:}"; ssid="${ssid//\\:/:}"
-         [ -n "$ssid" ] && [ -z "${_seen[$ssid]:-}" ] || continue
-         _seen[$ssid]=1; _rows+=("$sig"$'\t'"$ssid")
-       done < <(printf '%s\n' "${_raw[@]}" | sort -t: -k1,1 -rn)
+         [ -n "$ssid" ] || continue
+         case "$_seen" in *"|$ssid|"*) continue ;; esac
+         _seen="$_seen$ssid|"; _rows+=("$sig"$'\t'"$ssid")
+       done < <(R "nmcli -t -f SIGNAL,SSID dev wifi list 2>/dev/null" | sort -t: -k1,1 -rn)
        if [ "${#_rows[@]}" -eq 0 ]; then
          echo "  no networks (wlan0 up? the QCA6174 PCIe link is flaky — a reboot often brings it up)"; pause; continue
        fi
