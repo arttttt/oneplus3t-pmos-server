@@ -216,11 +216,16 @@ B="$1"; D=/dev/block/bootdevice/by-name/userdata
 rm -f /tmp/ud.done /tmp/ud.err /tmp/ud.fmt /tmp/ud.hash
 umount /data 2>/dev/null; umount "$D" 2>/dev/null
 magic=$(dd if=/tmp/r.img bs=4 count=1 2>/dev/null | od -An -tx1 | tr -d ' ')
-if [ "$magic" = "ed26ff3a" ]; then
-  echo sparse > /tmp/ud.fmt; simg2img /tmp/r.img "$D" 2>/tmp/ud.err; rc=$?
-else
-  echo raw > /tmp/ud.fmt; dd if=/tmp/r.img of="$D" bs=1048576 2>/tmp/ud.err; rc=$?
-fi
+# Android sparse magic is 0xed26ff3a; stored little-endian, so `od -tx1` (byte
+# order) prints "3aff26ed". Accept both, else a sparse image gets mis-flashed as
+# raw -> its GPT lands at the wrong offset and the relocate step aborts with
+# "no GPT on userdata after write".
+case "$magic" in
+  ed26ff3a|3aff26ed)
+    echo sparse > /tmp/ud.fmt; simg2img /tmp/r.img "$D" 2>/tmp/ud.err; rc=$? ;;
+  *)
+    echo raw > /tmp/ud.fmt; dd if=/tmp/r.img of="$D" bs=1048576 2>/tmp/ud.err; rc=$? ;;
+esac
 sync
 n=$(wc -c < /tmp/r.img)
 dd if="$D" bs=1048576 count="$B" 2>/dev/null | head -c "$n" | sha256sum | awk '{print $1}' > /tmp/ud.hash
