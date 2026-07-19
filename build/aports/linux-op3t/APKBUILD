@@ -7,7 +7,7 @@ maintainer="artem <artembambalov1993@gmail.com>"
 _flavor="op3t"
 pkgname=linux-$_flavor
 pkgver=7.2_rc1
-pkgrel=0
+pkgrel=11
 pkgdesc="Mainline kernel fork for the OnePlus 3T (msm8996pro) headless server"
 arch="aarch64"
 _carch="arm64"
@@ -33,7 +33,7 @@ makedepends="
 
 # Source: pinned to a commit on the op3t/7.2 branch (GitHub names the
 # extracted directory <repo>-<ref> for the ref given in the archive URL).
-_commit="dc59e4fea9d83f03bad6bddf3fa2e52491777482"
+_commit="a086d295e76d055261b684b48ff36a991dc70f18"
 source="
 	linux-op3t-$_commit.tar.gz::$url/archive/$_commit.tar.gz
 	config-$_flavor.$arch
@@ -66,6 +66,6 @@ package() {
 		INSTALL_DTBS_PATH="$pkgdir"/boot/dtbs
 }
 sha512sums="
-14457110b2f900d4d096a6e13f190b3ad2bf7769bc7a115958b8e935e6dd8d50eef3fd03f359aff28cf8b5556168295d2a4613bf71263f8fcfa9656a6e87b26c  linux-op3t-dc59e4fea9d83f03bad6bddf3fa2e52491777482.tar.gz
+86d9c4f3d601368c56f2aac8e9c46548fe6e45e3707796b0b98416dd415daca3bea51997de883590797b3693f18ff95147ae0af2aa70412fabf97df3874b327a  linux-op3t-50d9f4d739f441ebbe4ca532271298b473ea2b65.tar.gz
 ec56e6aaeba2ee1661b3cdd06057725e89435971b958713f5695c312c117d31f9406f3232f4c1f059bf91b15df0571d0c9bff89a0f4b565be842665d2052c64f  config-op3t.aarch64
 "
