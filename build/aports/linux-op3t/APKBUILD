@@ -7,7 +7,7 @@ maintainer="artem <artembambalov1993@gmail.com>"
 _flavor="op3t"
 pkgname=linux-$_flavor
 pkgver=7.2_rc1
-pkgrel=11
+pkgrel=13
 pkgdesc="Mainline kernel fork for the OnePlus 3T (msm8996pro) headless server"
 arch="aarch64"
 _carch="arm64"
@@ -33,7 +33,7 @@ makedepends="
 
 # Source: pinned to a commit on the op3t/7.2 branch (GitHub names the
 # extracted directory <repo>-<ref> for the ref given in the archive URL).
-_commit="a086d295e76d055261b684b48ff36a991dc70f18"
+_commit="4925b4e83993df143d6210fdb117d045a3bdc62e"
 source="
 	linux-op3t-$_commit.tar.gz::$url/archive/$_commit.tar.gz
 	config-$_flavor.$arch

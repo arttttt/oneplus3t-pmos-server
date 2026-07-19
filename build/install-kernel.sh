@@ -40,14 +40,13 @@ cleanup(){ rm -rf "$STAGE"; }; trap cleanup EXIT
 ssh_dev(){ ssh "${SSHOPTS[@]}" "$SSH_USER@$DEV_IP" "$@"; }
 scp_dev(){ scp "${SSHOPTS[@]}" "$1" "$SSH_USER@$DEV_IP:$2"; }
 
-# run a command as root on the device via pkexec (password over expect)
-root_dev(){
-  expect <<EOF
-log_user 0
-spawn ssh -tt ${SSHOPTS[*]} $SSH_USER@$DEV_IP pkexec sh -c {$1}
-expect { -re "assword:" { send "$PW\r"; exp_continue } eof }
-EOF
-}
+# Run a command as root on the device. Delegated to root-cmd.sh, which proves
+# the command actually ran: driving the pkexec prompt with a bare expect match
+# is flaky here, and when the password fails to land pkexec quietly gives up
+# while this script cheerfully reports success. That is not theoretical - it
+# once "flashed" a kernel without writing a single byte, and the device kept
+# booting the old one while everything looked fine.
+root_dev(){ "$(dirname "${BASH_SOURCE[0]}")/root-cmd.sh" "$@"; }
 
 ssh_dev true 2>/dev/null || { echo "device not reachable at $DEV_IP (boot it into pmOS first)" >&2; exit 1; }
 
@@ -97,11 +96,29 @@ log "scp boot.img (`du -h "$STAGE/boot.img" | cut -f1`) + modules (`du -h "$STAG
 scp_dev "$STAGE/boot.img"      /tmp/k.img
 scp_dev "$STAGE/modules.tar.gz" /tmp/k-mods.tar.gz
 
-log "write boot@512K (keep lk2nd), install modules, reboot"
-root_dev "set -e; \
-  dd if=/tmp/k.img of=$BOOT_PART bs=4096 seek=$BOOT_SEEK conv=fsync; \
+log "write boot@512K (keep lk2nd), install modules"
+root_dev "dd if=/tmp/k.img of=$BOOT_PART bs=4096 seek=$BOOT_SEEK conv=fsync 2>&1 | tail -1; \
   tar -C / -xzf /tmp/k-mods.tar.gz; \
-  rm -f /tmp/k.img /tmp/k-mods.tar.gz; sync; \
-  ( sleep 1; reboot ) &"
+  rm -f /tmp/k.img /tmp/k-mods.tar.gz; sync" || {
+	echo "the write did not run - nothing was flashed" >&2; exit 1; }
+
+# Read the kernel size back out of the boot image header we just wrote. lk2nd
+# occupies the start of the partition and the real image begins at BOOT_SEEK,
+# so the header field sits at seek*4096 + 8. Confirming it here is what turns
+# "it printed success" into "it actually landed".
+log "verify the write"
+want=$(python3 -c "import struct;print(struct.unpack('<I',open('$STAGE/boot.img','rb').read()[8:12])[0])")
+# Keep digits only: the remote output arrives with colour codes and padding.
+got=$(root_dev "dd if=$BOOT_PART bs=1 skip=$((BOOT_SEEK*4096+8)) count=4 2>/dev/null | od -An -tu4" | tr -cd '0-9')
+if [ "$want" = "$got" ]; then
+	echo "  kernel size on the partition: $got - matches"
+else
+	echo "  MISMATCH: expected $want, partition has $got - not rebooting" >&2
+	exit 1
+fi
+
+log "reboot"
+root_dev --quiet "( sleep 1; reboot ) &"
 echo
 echo "Pushed kernel $KVER. Device is rebooting; reach it at $DEV_IP in ~40s."
+echo "Confirm it took: uname -v should show a new #N-op3t, and ssh must drop first."

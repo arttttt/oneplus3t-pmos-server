@@ -51,7 +51,13 @@ expect {
 EOF
 	)
 	if [ "$QUIET" = 1 ] || printf '%s' "$out" | grep -q "$MARK"; then
-		printf '%s\n' "$out" | grep -vE "spawn ssh|Warning: Permanently|AUTHENTICATING FOR|Authentication is needed|Authenticating as|^Password:|AUTHENTICATION COMPLETE|$MARK|Connection to .* closed" | sed '/^[[:space:]]*$/d'
+		# Strip the colour codes pkexec emits as well as its own chatter:
+		# callers parse this output, and a stray "[0m" turns a number like
+		# 10491133 into 010491133 and breaks an otherwise correct comparison.
+		printf '%s\n' "$out" \
+			| sed $'s/\x1b\\[[0-9;]*[a-zA-Z]//g' \
+			| grep -vE "spawn ssh|Warning: Permanently|AUTHENTICATING FOR|Authentication is needed|Authenticating as|^Password:|AUTHENTICATION COMPLETE|$MARK|Connection to .* closed" \
+			| sed '/^[[:space:]]*$/d'
 		exit 0
 	fi
 	echo "  (attempt $try/$TRIES: root command did not confirm, retrying)" >&2
