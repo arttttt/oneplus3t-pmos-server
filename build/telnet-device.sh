@@ -39,6 +39,11 @@ echo "--- loaded modules ---"; lsmod 2>/dev/null | head -20
 echo "--- dmesg tail ---"; dmesg 2>/dev/null | tail -50'
 
 CMDS="${1:-$DEFAULT_CMDS}"
+# Tcl's send takes one line: fold any multi-line bundle into a single command.
+CMDS="$(printf '%s' "$CMDS" | tr '\n' ';')"
+# Anything Tcl treats specially inside "..." must be escaped, or the heredoc
+# below turns a shell command into a Tcl syntax error.
+CMDS="$(printf '%s' "$CMDS" | sed 's/\\/\\\\/g; s/"/\\"/g; s/\[/\\[/g; s/\]/\\]/g; s/\$/\\$/g')"
 
 if ! nc -z -G2 "$IP" 23 >/dev/null 2>&1; then
 	echo "port 23 is closed on $IP." >&2
@@ -49,7 +54,17 @@ fi
 
 command -v expect >/dev/null 2>&1 || { echo "expect is required" >&2; exit 2; }
 
-expect <<EOF 2>&1 | sed $'s/\r//; s/\x1b\[[0-9;]*[a-zA-Z]//g; s/[\xff\xfb\xfd\xfc\xfe]//g'
+# Telnet negotiation and colour codes arrive as raw bytes; BSD sed refuses to
+# touch them ("illegal byte sequence"), so filter in Python instead.
+clean() { python3 -c '
+import sys, re
+data = sys.stdin.buffer.read()
+data = re.sub(rb"\x1b\[[0-9;]*[a-zA-Z]", b"", data)   # ANSI escapes
+data = bytes(b for b in data if b < 0x80 or b in b"\n\t")  # telnet IAC etc
+sys.stdout.write(data.decode("utf-8", "replace").replace("\r", ""))
+'; }
+
+expect <<EOF 2>&1 | clean
 log_user 1
 set timeout 25
 spawn nc $IP 23
@@ -64,6 +79,10 @@ expect {
 	-re {[#\$] $} {}
 	timeout       {}
 }
-send "exit\r"
-expect eof
+# Do NOT send "exit": leaving the debug shell tells the initramfs to carry on
+# booting, which tears the shell down and — with no framebuffer — kills the
+# device outright. Just drop the connection; telnetd keeps serving, so the
+# shell stays available for the next command.
+close
+wait
 EOF
